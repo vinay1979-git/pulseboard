@@ -5,76 +5,99 @@ import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function Home() {
   return (
-    <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_32%),radial-gradient(circle_at_75%_15%,rgba(244,114,182,0.13),transparent_28%),linear-gradient(135deg,#f8fafc,#e2e8f0)] text-slate-950 dark:bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_32%),radial-gradient(circle_at_75%_15%,rgba(244,114,182,0.15),transparent_28%),linear-gradient(135deg,#020617,#111827_48%,#172554)] dark:text-white">
-      <nav className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5">
-        <Link href="/" className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-md border border-cyan-300/30 bg-cyan-300/15 text-cyan-700 dark:text-cyan-200">
+    <main className="min-h-screen overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.15),transparent_40%),radial-gradient(circle_at_75%_15%,rgba(139,92,246,0.12),transparent_35%),linear-gradient(185deg,#070a13,#0f172a)] text-slate-100 flex flex-col justify-between">
+      {/* Navbar */}
+      <nav className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6 border-b border-white/5 backdrop-blur-md">
+        <Link href="/" className="flex items-center gap-3 group">
+          <span className="flex h-10 w-10 items-center justify-center rounded-md border border-cyan-400/20 bg-cyan-400/10 text-cyan-400 group-hover:scale-105 transition-transform">
             <Activity className="size-5" />
           </span>
-          <span className="text-lg font-bold">PulseBoard</span>
+          <span className="text-xl font-black tracking-tight bg-gradient-to-r from-cyan-400 to-indigo-300 bg-clip-text text-transparent">
+            PulseBoard
+          </span>
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <ThemeToggle />
-          <Button asChild variant="secondary">
+          <Button asChild variant="secondary" className="h-11 px-5 border border-white/10 bg-slate-900/60 hover:bg-slate-900 text-white font-semibold">
             <Link href="/login">Log in</Link>
           </Button>
         </div>
       </nav>
 
-      <section className="mx-auto grid min-h-[calc(100vh-92px)] w-full max-w-6xl items-center gap-10 px-5 pb-10 pt-8 lg:grid-cols-[1.05fr_0.95fr]">
-        <div>
-          <div className="mb-5 inline-flex items-center gap-2 rounded-md border border-cyan-300/30 bg-white/65 px-3 py-2 text-sm font-medium text-cyan-800 backdrop-blur dark:bg-white/9 dark:text-cyan-100">
-            <Sparkles className="size-4" />
-            Secure team signals, one board
+      {/* Hero Section */}
+      <section className="mx-auto grid min-h-[calc(100vh-180px)] w-full max-w-6xl items-center gap-12 px-6 pb-16 pt-12 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="flex flex-col justify-center text-left">
+          <div className="mb-6 inline-flex w-fit items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/5 px-4 py-1.5 text-xs font-extrabold uppercase tracking-widest text-cyan-400 backdrop-blur">
+            <Sparkles className="size-3.5" />
+            Secure team signals &middot; real-time
           </div>
-          <h1 className="max-w-3xl text-5xl font-black leading-[1.02] tracking-normal text-slate-950 dark:text-white sm:text-6xl">
-            PulseBoard
+          
+          <h1 className="max-w-3xl text-5xl font-black leading-[1.05] tracking-tight text-white sm:text-6.5xl">
+            Sleek Live Polling <br />
+            <span className="bg-gradient-to-r from-cyan-400 via-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+              In A Single Pulse.
+            </span>
           </h1>
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-700 dark:text-slate-300">
-            A modern, authenticated command center for teams that need crisp
-            visibility, secure profiles, and fast access across every device.
+          
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-400">
+            A modern, authenticated command center for teams that need crisp visibility, secure profiles, and highly interactive live polls with beautiful word clouds.
           </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Button asChild>
+          
+          <div className="mt-10 flex flex-col gap-3 sm:flex-row">
+            <Button asChild className="h-12 px-6 bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-extrabold flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 group">
               <Link href="/login">
                 Get started
-                <ArrowRight className="size-4" />
+                <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
               </Link>
             </Button>
-            <Button asChild variant="secondary">
+            <Button asChild variant="secondary" className="h-12 px-6 border border-white/10 bg-slate-900/60 hover:bg-slate-900 text-white font-semibold flex items-center justify-center gap-2">
               <Link href="/dashboard">
                 Open dashboard
                 <LockKeyhole className="size-4" />
               </Link>
             </Button>
+            <Button asChild variant="secondary" className="h-12 px-6 border border-cyan-400/30 bg-cyan-400/5 hover:bg-cyan-400/10 text-cyan-400 font-extrabold flex items-center justify-center gap-2">
+              <Link href="/join">
+                Join a session
+                <Activity className="size-4 animate-pulse" />
+              </Link>
+            </Button>
           </div>
         </div>
 
-        <div className="rounded-lg border border-white/18 bg-white/70 p-4 shadow-2xl shadow-slate-950/10 backdrop-blur-xl dark:bg-white/9 dark:shadow-cyan-950/30">
-          <div className="grid gap-3">
+        {/* Visual Showcase Card */}
+        <div className="rounded-2xl border border-white/8 bg-slate-900/40 p-6 shadow-3xl shadow-slate-950/50 backdrop-blur-xl relative">
+          <div className="absolute -inset-px rounded-2xl bg-gradient-to-tr from-cyan-500/10 to-violet-500/10 opacity-30 pointer-events-none" />
+          
+          <div className="grid gap-4">
             {[
-              ["Auth health", "Protected", "bg-cyan-300"],
-              ["Workspace pulse", "Live", "bg-emerald-300"],
-              ["Profile sync", "Ready", "bg-fuchsia-300"],
-            ].map(([label, value, color]) => (
+              ["Signal room status", "Live Syncing", "bg-cyan-400", "shadow-cyan-400/30"],
+              ["Workspace pulse", "Premium Dark Mode", "bg-emerald-400", "shadow-emerald-400/30"],
+              ["Anonymous feedback", "Protected", "bg-fuchsia-400", "shadow-fuchsia-400/30"],
+            ].map(([label, value, color, glow]) => (
               <div
                 key={label}
-                className="flex items-center justify-between rounded-md border border-slate-200/80 bg-white/75 p-4 dark:border-white/10 dark:bg-slate-950/40"
+                className="flex items-center justify-between rounded-xl border border-white/5 bg-slate-950/40 p-5 backdrop-blur-md"
               >
                 <div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                     {label}
                   </p>
-                  <p className="mt-1 text-xl font-bold text-slate-950 dark:text-white">
+                  <p className="mt-1.5 text-lg font-black text-slate-100">
                     {value}
                   </p>
                 </div>
-                <span className={`h-3 w-3 rounded-full ${color}`} />
+                <span className={`h-3 w-3 rounded-full ${color} shadow-lg ${glow} animate-pulse`} />
               </div>
             ))}
           </div>
         </div>
       </section>
+
+      {/* Footer */}
+      <footer className="text-center text-xs text-slate-600 py-6 border-t border-white/5">
+        PulseBoard &copy; {new Date().getFullYear()} &middot; Built for Premium Real-Time Operations.
+      </footer>
     </main>
   );
 }

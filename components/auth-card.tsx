@@ -1,56 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Mail, Search, ShieldCheck } from "lucide-react";
+import { Loader2, Search, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
-
-type AuthMode = "login" | "signup";
 
 export function AuthCard() {
   const router = useRouter();
   const supabase = createClient();
-  const [mode, setMode] = useState<AuthMode>("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-
-  async function submitAuth(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setLoading(true);
-    setMessage("");
-
-    const authResult =
-      mode === "signup"
-        ? await supabase.auth.signUp({
-            email,
-            password,
-            options: {
-              emailRedirectTo: `${window.location.origin}/auth/callback`,
-            },
-          })
-        : await supabase.auth.signInWithPassword({ email, password });
-
-    setLoading(false);
-
-    if (authResult.error) {
-      setMessage(authResult.error.message);
-      return;
-    }
-
-    if (mode === "signup" && !authResult.data.session) {
-      setMessage("Check your inbox to confirm your account.");
-      return;
-    }
-
-    router.push("/dashboard");
-    router.refresh();
-  }
 
   async function signInWithGoogle() {
     setLoading(true);
@@ -70,101 +30,44 @@ export function AuthCard() {
   }
 
   return (
-    <div className="w-full max-w-md rounded-lg border border-white/14 bg-white/75 p-6 shadow-2xl shadow-slate-950/10 backdrop-blur-xl dark:bg-white/9 dark:shadow-cyan-950/25">
-      <div className="mb-8 flex items-start justify-between gap-4">
+    <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/60 p-8 shadow-3xl shadow-slate-950/50 backdrop-blur-2xl relative overflow-hidden">
+      <div className="absolute -inset-px rounded-2xl bg-gradient-to-tr from-cyan-500/5 to-transparent pointer-events-none" />
+
+      <div className="mb-8 flex items-start justify-between gap-4 relative z-10">
         <div>
-          <div className="mb-3 inline-flex h-11 w-11 items-center justify-center rounded-md border border-cyan-300/30 bg-cyan-300/15 text-cyan-700 dark:text-cyan-200">
+          <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-lg border border-cyan-400/20 bg-cyan-400/10 text-cyan-400">
             <ShieldCheck className="size-5" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
-            {mode === "login" ? "Welcome back" : "Create your account"}
-          </h1>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-            {mode === "login"
-              ? "Sign in to your PulseBoard workspace."
-              : "Start tracking your workspace pulse today."}
+          <h2 className="text-2xl font-black text-white tracking-tight">
+            Welcome to PulseBoard
+          </h2>
+          <p className="mt-1.5 text-sm text-slate-400">
+            Sign in via Google to access your polling console dashboard workspace.
           </p>
         </div>
       </div>
 
-      <div className="mb-5 grid grid-cols-2 rounded-md border border-slate-200 bg-slate-100 p-1 dark:border-white/10 dark:bg-slate-950/45">
-        {(["login", "signup"] as const).map((item) => (
-          <button
-            key={item}
-            type="button"
-            onClick={() => {
-              setMode(item);
-              setMessage("");
-            }}
-            className={cn(
-              "h-9 rounded-sm text-sm font-semibold capitalize transition",
-              mode === item
-                ? "bg-white text-slate-950 shadow-sm dark:bg-white/12 dark:text-white"
-                : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white",
-            )}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
-
-      <form className="space-y-4" onSubmit={submitAuth}>
-        <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="you@company.com"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            autoComplete={mode === "login" ? "current-password" : "new-password"}
-            required
-            minLength={6}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="********"
-          />
-        </div>
+      <div className="space-y-4 relative z-10">
+        <Button
+          type="button"
+          onClick={signInWithGoogle}
+          disabled={loading}
+          className="w-full h-12 text-xs font-black uppercase tracking-wider bg-cyan-500 hover:bg-cyan-600 text-slate-950 flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-cyan-500/10"
+        >
+          {loading ? (
+            <Loader2 className="size-4 animate-spin text-slate-950" />
+          ) : (
+            <Search className="size-4 text-slate-950" />
+          )}
+          Continue with Google
+        </Button>
 
         {message ? (
-          <p className="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-sm text-cyan-800 dark:text-cyan-100">
+          <p className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 px-4 py-2.5 text-sm text-cyan-400 font-semibold shadow-inner">
             {message}
           </p>
         ) : null}
-
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? <Loader2 className="size-4 animate-spin" /> : <Mail className="size-4" />}
-          {mode === "login" ? "Log in" : "Sign up"}
-        </Button>
-      </form>
-
-      <div className="my-5 flex items-center gap-3">
-        <div className="h-px flex-1 bg-slate-200 dark:bg-white/10" />
-        <span className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-          or
-        </span>
-        <div className="h-px flex-1 bg-slate-200 dark:bg-white/10" />
       </div>
-
-      <Button
-        type="button"
-        variant="secondary"
-        className="w-full text-slate-950 dark:text-white"
-        onClick={signInWithGoogle}
-        disabled={loading}
-      >
-        <Search className="size-4" />
-        Continue with Google
-      </Button>
     </div>
   );
 }
