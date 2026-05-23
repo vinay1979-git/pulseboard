@@ -98,7 +98,7 @@ export function DashboardWorkspace({
   }
 
   return (
-    <div className="mx-auto max-w-7xl">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6">
       {/* Header Section */}
       <div className="mb-8 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>

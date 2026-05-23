@@ -48,6 +48,12 @@ export default function HostConsolePage() {
   const [session, setSession] = useState<Session | null>(null);
   const [userRole, setUserRole] = useState<string>("power-user");
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== "undefined" ? window.innerWidth : 1000);
+
+  const scale = useMemo(() => {
+    if (windowWidth >= 768) return 1;
+    return Math.max(0.4, (windowWidth - 48) / 720);
+  }, [windowWidth]);
   const [activeQuestion, setActiveQuestion] = useState<Question | null>(null);
   const [responses, setResponses] = useState<Response[]>([]);
   const [participantsCount, setParticipantsCount] = useState<number>(0);
@@ -254,6 +260,13 @@ export default function HostConsolePage() {
   useEffect(() => {
     activeQuestionRef.current = activeQuestion;
   }, [activeQuestion]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     void loadHostData();
@@ -533,7 +546,7 @@ export default function HostConsolePage() {
 
   return (
     <AppShell email="Presenter Console" identityLabel={`Active Room Pin: ${code}`} role={userRole}>
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6">
         
         {/* Presenter Actions Banner - Sleek Dark overlay */}
         <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between rounded-2xl border border-white/10 bg-slate-900/60 p-5 shadow-2xl backdrop-blur-2xl relative overflow-hidden">
@@ -644,7 +657,7 @@ export default function HostConsolePage() {
                       Code: {code}
                     </span>
                   </p>
-                  <h2 className="text-2xl font-black mt-1 text-white line-clamp-1">
+                  <h2 className="text-2xl font-black mt-1 text-white whitespace-normal break-words leading-snug">
                     {activeQuestion ? activeQuestion.prompt_text : "No Live Question"}
                   </h2>
                 </div>
@@ -730,7 +743,7 @@ export default function HostConsolePage() {
                   /* Custom Premium SVGs React + Framer Motion Word Cloud */
                   <div className="h-96 w-full border border-white/5 rounded-xl bg-slate-950/40 overflow-hidden relative shadow-inner flex items-center justify-center">
                     {wordCloudWords.map((word, index) => {
-                      const fontSize = 16 + Math.min(word.count * 8, 48); 
+                      const fontSize = (16 + Math.min(word.count * 8, 48)) * scale; 
                       
                       return (
                         <span
@@ -741,8 +754,8 @@ export default function HostConsolePage() {
                           style={{
                             fontSize: `${fontSize}px`,
                             lineHeight: "1.1",
-                            left: `calc(50% + ${word.x}px)`,
-                            top: `calc(50% + ${word.y}px)`,
+                            left: `calc(50% + ${word.x * scale}px)`,
+                            top: `calc(50% + ${word.y * scale}px)`,
                             transform: "translate(-50%, -50%)",
                           }}
                           title={`${word.count} entries`}

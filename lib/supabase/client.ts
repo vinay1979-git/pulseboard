@@ -28,6 +28,9 @@ export function createClient() {
           return { data: { session: {} }, error: null };
         },
         signInWithOAuth: async () => {
+          if (typeof window !== "undefined") {
+            window.location.href = "/dashboard";
+          }
           return { error: null };
         },
         signOut: async () => {

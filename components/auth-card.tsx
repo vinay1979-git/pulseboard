@@ -5,6 +5,7 @@ import { Loader2, Search, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { getSupabaseUrl, isSupabaseConfigured } from "@/lib/env";
 
 export function AuthCard() {
   const router = useRouter();
@@ -12,20 +13,27 @@ export function AuthCard() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function signInWithGoogle() {
+  function signInWithGoogle() {
     setLoading(true);
     setMessage("");
 
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
+    if (!isSupabaseConfigured()) {
+      // Mock mode: immediately log in and redirect to dashboard
+      window.location.href = "/dashboard";
+      return;
+    }
 
-    if (error) {
+    try {
+      // Real Supabase mode: Direct synchronous redirect to authorize endpoint
+      // This completely bypasses the asynchronous REST call that triggers popup/redirect blockers in Chrome on Android and Safari on iOS!
+      const supabaseUrl = getSupabaseUrl();
+      const redirectTo = `${window.location.origin}/auth/callback`;
+      const authorizeUrl = `${supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
+      
+      window.location.href = authorizeUrl;
+    } catch (err: any) {
       setLoading(false);
-      setMessage(error.message);
+      setMessage(err.message || "Failed to trigger authentication flow.");
     }
   }
 
