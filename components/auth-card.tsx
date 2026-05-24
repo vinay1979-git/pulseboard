@@ -13,7 +13,7 @@ export function AuthCard() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  function signInWithGoogle() {
+  async function signInWithGoogle() {
     setLoading(true);
     setMessage("");
 
@@ -24,13 +24,15 @@ export function AuthCard() {
     }
 
     try {
-      // Real Supabase mode: Direct synchronous redirect to authorize endpoint
-      // This completely bypasses the asynchronous REST call that triggers popup/redirect blockers in Chrome on Android and Safari on iOS!
-      const supabaseUrl = getSupabaseUrl();
       const redirectTo = `${window.location.origin}/auth/callback`;
-      const authorizeUrl = `${supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo,
+        },
+      });
       
-      window.location.href = authorizeUrl;
+      if (error) throw error;
     } catch (err: any) {
       setLoading(false);
       setMessage(err.message || "Failed to trigger authentication flow.");

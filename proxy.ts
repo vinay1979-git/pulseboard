@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { getSupabaseKey, getSupabaseUrl } from "@/lib/env";
+import { getSupabaseKey, getSupabaseUrl, isSupabaseConfigured } from "@/lib/env";
 
 function redirectWithCookies(
   request: NextRequest,
@@ -22,6 +22,12 @@ export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   });
+
+  // 1. If Supabase is not configured, we are in local development mock mode.
+  // Bypass all middleware redirect checks to let page fallbacks handle routing.
+  if (!isSupabaseConfigured()) {
+    return supabaseResponse;
+  }
 
   const supabase = createServerClient(getSupabaseUrl(), getSupabaseKey(), {
     cookies: {
@@ -45,25 +51,85 @@ export async function proxy(request: NextRequest) {
     },
   });
 
+  // Use supabase.auth.getUser() to read cookies and update session
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-  const isProtectedRoute =
-    pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/profile") ||
-    pathname.startsWith("/builder") ||
-    pathname === "/polls" ||
-    pathname.endsWith("/host");
-  const isAuthRoute = pathname.startsWith("/login");
 
-  if (!user && isProtectedRoute) {
-    return redirectWithCookies(request, supabaseResponse, "/login");
+  // Safeguard: Ensure auth/callback is completely ignored by redirect logic
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api") ||
+    pathname === "/favicon.ico" ||
+    pathname.match(/\.(?:svg|png|jpg|jpeg|gif|webp)$/) ||
+    pathname.startsWith("/auth/callback")
+  ) {
+    return supabaseResponse;
   }
 
-  if (user && isAuthRoute) {
-    return redirectWithCookies(request, supabaseResponse, "/dashboard");
+  // 2. If getUser() returns null (NO session):
+  if (!user) {
+    // If trying to access /dashboard or /console, redirect to /login
+    if (pathname.startsWith("/dashboard") || pathname.startsWith("/console")) {
+      return redirectWithCookies(request, supabaseResponse, "/login");
+    }
+    // Fallback legacy protected routes
+    const isLegacyProtectedRoute =
+      pathname.startsWith("/profile") ||
+      pathname.startsWith("/builder") ||
+      pathname === "/polls" ||
+      pathname.endsWith("/host");
+    if (isLegacyProtectedRoute) {
+      return redirectWithCookies(request, supabaseResponse, "/login");
+    }
+    return supabaseResponse;
+  }
+
+  // 3. If getUser() returns a valid session:
+  let approvalStatus = "pending";
+  try {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("approval_status")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profile) {
+      approvalStatus = profile.approval_status;
+    } else {
+      // Hardcode super-admin email to approved even if profile record doesn't exist yet
+      if (user.email?.toLowerCase() === "vinay1979@gmail.com") {
+        approvalStatus = "approved";
+      } else {
+        approvalStatus = "pending";
+      }
+    }
+  } catch (e) {
+    console.error("Middleware profile fetch error:", e);
+    // Safe fallback logic
+    if (user.email?.toLowerCase() === "vinay1979@gmail.com") {
+      approvalStatus = "approved";
+    } else {
+      approvalStatus = "pending";
+    }
+  }
+
+  // 4. Redirect based on approval_status
+  if (approvalStatus === "pending") {
+    if (pathname !== "/awaiting-approval") {
+      return redirectWithCookies(request, supabaseResponse, "/awaiting-approval");
+    }
+    return supabaseResponse;
+  }
+
+  if (approvalStatus === "approved") {
+    // If valid session and approved, and user is navigating to /login, redirect to /dashboard
+    if (pathname === "/login" || pathname === "/awaiting-approval") {
+      return redirectWithCookies(request, supabaseResponse, "/dashboard");
+    }
+    return supabaseResponse;
   }
 
   return supabaseResponse;
@@ -71,6 +137,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|auth/callback|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
