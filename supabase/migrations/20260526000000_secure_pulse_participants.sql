@@ -1,4 +1,14 @@
--- 1. Create the pulse_participants table for temporary logins
+-- 1. Extend the sessions table with configuration columns
+ALTER TABLE sessions 
+ADD COLUMN IF NOT EXISTS auth_mode VARCHAR(50) DEFAULT 'anonymous',
+ADD COLUMN IF NOT EXISTS auto_launch BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS timer_seconds INTEGER DEFAULT 0;
+
+-- 2. Extend the questions table with correct answer indices
+ALTER TABLE questions 
+ADD COLUMN IF NOT EXISTS correct_option INTEGER DEFAULT NULL;
+
+-- 3. Create the pulse_participants table for temporary logins
 CREATE TABLE IF NOT EXISTS pulse_participants (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -24,3 +34,6 @@ ADD COLUMN IF NOT EXISTS pulse_participant_id UUID REFERENCES pulse_participants
 
 -- 5. Create an index to optimize participant queries
 CREATE INDEX IF NOT EXISTS idx_pulse_participants_session ON pulse_participants(session_id);
+
+-- 6. Rebuild PostgREST API schema cache
+NOTIFY pgrst, 'reload schema';
