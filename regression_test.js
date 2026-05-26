@@ -131,6 +131,56 @@ async function runTests() {
     const resetResps = await apiCall("getResponses", { questionId: q1.id });
     assert(resetResps.length === 0, "resetResponses successfully clears responses from database.");
 
+    // Test 11: Participant Registration
+    const participantName = "Jane Doe";
+    const participantEmail = "jane.doe@example.com";
+    const registeredParticipant = await apiCall("registerParticipant", {
+      sessionId: newSession.id,
+      name: participantName,
+      email: participantEmail
+    });
+    assert(
+      registeredParticipant !== null &&
+      registeredParticipant.name === participantName &&
+      registeredParticipant.email === participantEmail &&
+      registeredParticipant.score === 0,
+      "registerParticipant successfully registers a participant with 0 initial score."
+    );
+
+    // Test 12: Get Participants List
+    const participantsList = await apiCall("getParticipants", { sessionId: newSession.id });
+    assert(
+      participantsList.length === 1 &&
+      participantsList[0].id === registeredParticipant.id,
+      "getParticipants successfully retrieves the registered participant."
+    );
+
+    // Test 13: Submit Response Linked to Participant
+    const submittedResponse = await apiCall("submitResponse", {
+      questionId: q1.id,
+      participantId: pId,
+      value: "0",
+      pulseParticipantId: registeredParticipant.id
+    });
+    assert(
+      submittedResponse !== null &&
+      submittedResponse.pulse_participant_id === registeredParticipant.id,
+      "submitResponse successfully saves the pulse_participant_id link."
+    );
+
+    // Test 14: Score Calculation Logic
+    await apiCall("calculateScores", {
+      questionId: q1.id,
+      correctOption: 1 // Option index 0 (+1) = Option 1
+    });
+
+    const updatedParticipantsList = await apiCall("getParticipants", { sessionId: newSession.id });
+    assert(
+      updatedParticipantsList.length === 1 &&
+      updatedParticipantsList[0].score === 10,
+      "calculateScores successfully increments the score of correct respondents by 10 points."
+    );
+
   } catch (err) {
     console.error("💥 Test suite encountered fatal error:", err);
     failed++;

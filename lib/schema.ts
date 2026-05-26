@@ -1,5 +1,6 @@
 export type SessionStatus = "active" | "inactive";
 export type QuestionType = "multiple_choice" | "word_cloud";
+export type AuthMode = "anonymous" | "gmail" | "quiz_gmail";
 
 export interface Session {
   id: string;
@@ -11,6 +12,9 @@ export interface Session {
   last_live_at?: string | null;
   created_at: string;
   updated_at: string;
+  auth_mode?: AuthMode;
+  auto_launch?: boolean;
+  timer_seconds?: number;
   // Creator & modifier display metadata
   creator_email?: string;
   creator_name?: string;
@@ -30,6 +34,7 @@ export interface Question {
   created_at: string;
   updated_at?: string | null;
   order_index: number;
+  correct_option?: number | null; // 1-indexed correct answer (1-8)
 }
 
 export interface Response {
@@ -38,6 +43,7 @@ export interface Response {
   participant_id: string; // Anonymous, stored in participant localStorage
   value: string; // Option index or word text
   created_at: string;
+  pulse_participant_id?: string | null;
 }
 
 export interface UserProfile {
@@ -49,3 +55,13 @@ export interface UserProfile {
   created_at: string;
   updated_at: string;
 }
+
+export interface PulseParticipant {
+  id: string;
+  session_id: string;
+  name: string;
+  email: string;
+  score: number;
+  created_at: string;
+}
+

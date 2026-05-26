@@ -1,7 +1,7 @@
 import { isSupabaseConfigured } from "@/lib/env";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
-import { createClient as createServerClient } from "@/lib/supabase/server";
-import type { Session, Question, Response, UserProfile, SessionStatus, QuestionType } from "./schema";
+import { createClient as createServerClient, createAdminClient } from "@/lib/supabase/server";
+import type { Session, Question, Response, UserProfile, SessionStatus, QuestionType, PulseParticipant } from "./schema";
 import { pusherServer } from "./pusherServer";
 
 function logDbError(context: string, error: any) {
@@ -22,6 +22,7 @@ interface LocalDatabase {
   questions: Question[];
   responses: Response[];
   profiles: UserProfile[];
+  pulse_participants: PulseParticipant[];
 }
 
 const globalForDb = global as unknown as {
@@ -135,7 +136,8 @@ if (!globalForDb._pulseboardDb) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }
-    ]
+    ],
+    pulse_participants: []
   };
 }
 
@@ -147,8 +149,14 @@ function sanitizeText(text: string): string {
   return text.replace(/<[^>]*>/g, "").trim();
 }
 
+function isMockId(id: string): boolean {
+  if (!id) return true;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return !uuidRegex.test(id) || id.startsWith("demo-") || id.startsWith("inactive-") || id.startsWith("q-demo-") || id.startsWith("r-") || id.startsWith("p-mock-") || id.startsWith("p-regression-");
+}
+
 async function getSessionCodeById(sessionId: string): Promise<string | null> {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isMockId(sessionId)) {
     try {
       const supabase = await createServerClient();
       const { data } = await supabase
@@ -166,7 +174,7 @@ async function getSessionCodeById(sessionId: string): Promise<string | null> {
 }
 
 async function getSessionCodeByQuestionId(questionId: string): Promise<string | null> {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isMockId(questionId)) {
     try {
       const supabase = await createServerClient();
       const { data: question } = await supabase
@@ -242,7 +250,7 @@ export async function getSessions(userId: string, isSuperAdmin = false): Promise
 }
 
 export async function getSessionByCode(code: string): Promise<Session | null> {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && code !== "123456" && code !== "987654") {
     try {
       const isServer = typeof window === "undefined";
       const supabase = isServer ? await createServerClient() : createBrowserClient();
@@ -392,8 +400,11 @@ export async function createSession(userId: string, title: string): Promise<Sess
     code += Math.floor(Math.random() * 10).toString();
   }
 
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const isSupabase = isSupabaseConfigured() && uuidRegex.test(userId);
+
   const newSession: Session = {
-    id: crypto.randomUUID(),
+    id: isSupabase ? crypto.randomUUID() : `demo-${crypto.randomUUID()}`,
     code,
     title: sanitizedTitle,
     status: "inactive",
@@ -404,8 +415,7 @@ export async function createSession(userId: string, title: string): Promise<Sess
     updated_at: new Date().toISOString(),
   };
 
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (isSupabaseConfigured() && uuidRegex.test(userId)) {
+  if (isSupabase) {
     try {
       const supabase = await createServerClient();
       const { data, error } = await supabase
@@ -443,7 +453,7 @@ export async function updateSessionStatus(sessionId: string, status: SessionStat
     updates.last_live_at = now;
   }
 
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isMockId(sessionId)) {
     try {
       const { error } = await supabase
         .from("sessions")
@@ -505,7 +515,7 @@ export async function deleteSession(sessionId: string): Promise<void> {
 }
 
 export async function getQuestions(sessionId: string): Promise<Question[]> {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isMockId(sessionId)) {
     try {
       const isServer = typeof window === "undefined";
       const supabase = isServer ? await createServerClient() : createBrowserClient();
@@ -552,7 +562,7 @@ export async function createQuestion(
   
   // Find current max order_index for this session
   let nextOrderIndex = 0;
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isMockId(sessionId)) {
     try {
       const supabase = await createServerClient();
       const { data } = await supabase
@@ -575,8 +585,10 @@ export async function createQuestion(
     }
   }
 
+  const isSupabase = isSupabaseConfigured() && !isMockId(sessionId);
+
   const newQuestion: Question = {
-    id: crypto.randomUUID(),
+    id: isSupabase ? crypto.randomUUID() : `demo-${crypto.randomUUID()}`,
     session_id: sessionId,
     type,
     prompt_text: sanitizedPrompt !== "" ? sanitizedPrompt : "Untitled Question",
@@ -586,7 +598,7 @@ export async function createQuestion(
     order_index: nextOrderIndex,
   };
 
-  if (isSupabaseConfigured()) {
+  if (isSupabase) {
     try {
       const supabase = await createServerClient();
       const { data, error } = await supabase
@@ -615,7 +627,7 @@ export async function createQuestion(
 export async function deleteQuestion(questionId: string): Promise<void> {
   let sessionId: string | null = null;
   
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isMockId(questionId)) {
     try {
       const supabase = await createServerClient();
       const { data: q } = await supabase.from("questions").select("session_id").eq("id", questionId).maybeSingle();
@@ -641,7 +653,7 @@ export async function deleteQuestion(questionId: string): Promise<void> {
 }
 
 export async function setQuestionLive(sessionId: string, questionId: string): Promise<void> {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isMockId(sessionId)) {
     try {
       const supabase = await createServerClient();
       
@@ -687,7 +699,7 @@ export async function setQuestionLive(sessionId: string, questionId: string): Pr
 }
 
 export async function getResponses(questionId: string): Promise<Response[]> {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isMockId(questionId)) {
     try {
       const isServer = typeof window === "undefined";
       const supabase = isServer ? await createServerClient() : createBrowserClient();
@@ -709,7 +721,8 @@ export async function getResponses(questionId: string): Promise<Response[]> {
 export async function submitResponse(
   questionId: string,
   participantId: string,
-  value: string
+  value: string,
+  pulseParticipantId?: string | null
 ): Promise<Response> {
   const sanitizedValue = sanitizeText(value);
   const newResponse: Response = {
@@ -718,11 +731,12 @@ export async function submitResponse(
     participant_id: participantId,
     value: sanitizedValue,
     created_at: new Date().toISOString(),
+    pulse_participant_id: pulseParticipantId || null,
   };
 
   let resolvedResponse = newResponse;
 
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isMockId(questionId)) {
     try {
       const isServer = typeof window === "undefined";
       const supabase = isServer ? await createServerClient() : createBrowserClient();
@@ -740,7 +754,11 @@ export async function submitResponse(
       if (existing) {
         const { data, error } = await supabase
           .from("responses")
-          .update({ value: sanitizedValue, created_at: new Date().toISOString() })
+          .update({ 
+            value: sanitizedValue, 
+            created_at: new Date().toISOString(),
+            pulse_participant_id: pulseParticipantId || null
+          })
           .eq("id", existing.id)
           .select()
           .single();
@@ -785,7 +803,7 @@ export async function submitResponse(
 }
 
 export async function resetResponses(questionId: string): Promise<void> {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isMockId(questionId)) {
     try {
       const supabase = await createServerClient();
       const { error } = await supabase.from("responses").delete().eq("question_id", questionId);
@@ -811,7 +829,7 @@ export async function resetResponses(questionId: string): Promise<void> {
 }
 
 export async function setQuestionsLive(sessionId: string, questionIds: string[]): Promise<void> {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isMockId(sessionId)) {
     try {
       const supabase = await createServerClient();
       
@@ -898,7 +916,7 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
 }
 
 export async function reorderQuestions(sessionId: string, questionIds: string[]): Promise<void> {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isMockId(sessionId)) {
     try {
       const supabase = await createServerClient();
       
@@ -1225,5 +1243,199 @@ export async function cleanupTestData(userId: string): Promise<void> {
       
     db.questions = db.questions.filter(q => !testSessionIds.includes(q.session_id));
     db.responses = db.responses.filter(r => !testQuestionIds.includes(r.question_id));
+    if (db.pulse_participants) {
+      db.pulse_participants = db.pulse_participants.filter(p => !testSessionIds.includes(p.session_id));
+    }
   }
 }
+
+export async function registerParticipant(
+  sessionId: string,
+  name: string,
+  email: string
+): Promise<PulseParticipant> {
+  const sanitizedName = sanitizeText(name);
+  const sanitizedEmail = sanitizeText(email).toLowerCase();
+
+  const newParticipant: PulseParticipant = {
+    id: crypto.randomUUID(),
+    session_id: sessionId,
+    name: sanitizedName,
+    email: sanitizedEmail,
+    score: 0,
+    created_at: new Date().toISOString(),
+  };
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createAdminClient();
+      
+      // Check if participant already exists in this session by email
+      const { data: existing, error: findError } = await supabase
+        .from("pulse_participants")
+        .select("*")
+        .eq("session_id", sessionId)
+        .eq("email", sanitizedEmail)
+        .maybeSingle();
+
+      if (findError) throw findError;
+      if (existing) return existing as PulseParticipant;
+
+      // Insert new participant using admin client
+      const { data, error } = await supabase
+        .from("pulse_participants")
+        .insert(newParticipant)
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (data) return data as PulseParticipant;
+    } catch (e) {
+      logDbError("registerParticipant", e);
+    }
+  }
+
+  // Local Mock Fallback
+  if (!db.pulse_participants) {
+    db.pulse_participants = [];
+  }
+  let participant = db.pulse_participants.find(
+    p => p.session_id === sessionId && p.email === sanitizedEmail
+  );
+  if (!participant) {
+    participant = newParticipant;
+    db.pulse_participants.push(participant);
+  }
+  return participant;
+}
+
+export async function getParticipants(sessionId: string): Promise<PulseParticipant[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const isServer = typeof window === "undefined";
+      const supabase = isServer ? await createServerClient() : createBrowserClient();
+      
+      // Anyone can SELECT participants since RLS has a public read policy
+      const { data, error } = await supabase
+        .from("pulse_participants")
+        .select("*")
+        .eq("session_id", sessionId)
+        .order("score", { ascending: false })
+        .order("name", { ascending: true });
+
+      if (error) throw error;
+      if (data) return data as PulseParticipant[];
+    } catch (e) {
+      logDbError("getParticipants", e);
+    }
+  }
+
+  // Local Mock Fallback
+  if (!db.pulse_participants) {
+    db.pulse_participants = [];
+  }
+  return db.pulse_participants
+    .filter(p => p.session_id === sessionId)
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+}
+
+export async function calculateScores(
+  questionId: string,
+  correctOption: number
+): Promise<void> {
+  // correctOption is 1-indexed (e.g. 1 to 8). In responses, "value" is stored as string matching option index (0-indexed, like "0", "1")
+  const correctOptionValueStr = (correctOption - 1).toString();
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createAdminClient();
+
+      // 1. Get the question's session_id to broadcast and match
+      const { data: question, error: qError } = await supabase
+        .from("questions")
+        .select("session_id")
+        .eq("id", questionId)
+        .maybeSingle();
+
+      if (qError) throw qError;
+      if (!question) return;
+
+      const sessionId = question.session_id;
+
+      // 2. Fetch all responses for this question
+      const { data: responses, error: rError } = await supabase
+        .from("responses")
+        .select("*")
+        .eq("question_id", questionId);
+
+      if (rError) throw rError;
+
+      // 3. Find participants who answered correctly
+      const correctResponses = (responses || []).filter(
+        r => r.value === correctOptionValueStr && r.pulse_participant_id
+      );
+
+      if (correctResponses.length > 0) {
+        const participantIds = correctResponses.map(r => r.pulse_participant_id);
+
+        // Fetch the participants first:
+        const { data: participantsToUpdate, error: pError } = await supabase
+          .from("pulse_participants")
+          .select("id, score")
+          .in("id", participantIds);
+
+        if (!pError && participantsToUpdate) {
+          const promises = participantsToUpdate.map(p =>
+            supabase
+              .from("pulse_participants")
+              .update({ score: p.score + 10 })
+              .eq("id", p.id)
+          );
+          await Promise.all(promises);
+        }
+      }
+
+      // Broadcast via Pusher that leaderboard has updated
+      const sessionCode = await getSessionCodeById(sessionId);
+      if (sessionCode && pusherServer) {
+        try {
+          await pusherServer.trigger(`session-${sessionCode}`, "leaderboard-updated", {});
+        } catch (e) {
+          console.error("Pusher leaderboard-updated trigger error:", e);
+        }
+      }
+      return;
+    } catch (e) {
+      logDbError("calculateScores", e);
+    }
+  }
+
+  // Local Mock Fallback
+  if (!db.pulse_participants) {
+    db.pulse_participants = [];
+  }
+  const mockResponses = db.responses.filter(r => r.question_id === questionId);
+  const correctMockResponses = mockResponses.filter(
+    r => r.value === correctOptionValueStr && r.pulse_participant_id
+  );
+
+  correctMockResponses.forEach(r => {
+    const participant = db.pulse_participants.find(p => p.id === r.pulse_participant_id);
+    if (participant) {
+      participant.score += 10;
+    }
+  });
+
+  const mockQuestion = db.questions.find(q => q.id === questionId);
+  if (mockQuestion) {
+    const sessionCode = await getSessionCodeById(mockQuestion.session_id);
+    if (sessionCode && pusherServer) {
+      try {
+        await pusherServer.trigger(`session-${sessionCode}`, "leaderboard-updated", {});
+      } catch (e) {
+        console.error("Pusher mock leaderboard-updated trigger error:", e);
+      }
+    }
+  }
+}
+

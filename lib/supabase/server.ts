@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { getSupabaseKey, getSupabaseUrl, isSupabaseConfigured } from "@/lib/env";
 
@@ -48,3 +49,28 @@ export async function createClient() {
     },
   });
 }
+
+export function createAdminClient() {
+  const url = getSupabaseUrl();
+  const adminKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  // Stateless admin client bypasses RLS using service role key.
+  // Fall back to a standard client if the admin key is not available.
+  if (!url || !adminKey || url === "" || adminKey === "") {
+    const fallbackKey = getSupabaseKey();
+    return createSupabaseClient(url || "https://placeholder.supabase.co", fallbackKey || "placeholder", {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      }
+    });
+  }
+
+  return createSupabaseClient(url, adminKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    }
+  });
+}
+

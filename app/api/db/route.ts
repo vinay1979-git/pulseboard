@@ -52,12 +52,19 @@ export async function POST(req: NextRequest) {
       case "getResponses":
         return NextResponse.json(await db.getResponses(args.questionId));
       case "submitResponse":
-        return NextResponse.json(await db.submitResponse(args.questionId, args.participantId, args.value));
+        return NextResponse.json(await db.submitResponse(args.questionId, args.participantId, args.value, args.pulseParticipantId));
       case "resetResponses":
         await db.resetResponses(args.questionId);
         return NextResponse.json({ success: true });
       case "syncUserProfile":
         return NextResponse.json(await db.syncUserProfile(args.userId, args.email, args.avatarUrl));
+      case "registerParticipant":
+        return NextResponse.json(await db.registerParticipant(args.sessionId, args.name, args.email));
+      case "getParticipants":
+        return NextResponse.json(await db.getParticipants(args.sessionId));
+      case "calculateScores":
+        await db.calculateScores(args.questionId, args.correctOption);
+        return NextResponse.json({ success: true });
       case "updateUserProfileAvatar":
         await db.updateUserProfileAvatar(args.userId, args.avatarUrl);
         return NextResponse.json({ success: true });
