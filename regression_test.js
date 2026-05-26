@@ -30,18 +30,25 @@ async function runTests() {
     }
   }
 
+  let TEST_USER_ID = "demo-user-id";
   let newSession = null;
   try {
     // Test 1: Get Seed Session
     const session = await apiCall("getSessionByCode", { code: "123456" });
     assert(session !== null && session.code === "123456", "getSessionByCode fetches the seed session successfully.");
 
+    // Dynamically resolve TEST_USER_ID from seed session creator to satisfy UUID & Foreign Key constraints
+    TEST_USER_ID = session.created_by;
+
+    // Sync profile first to ensure UUID and foreign key constraints pass
+    await apiCall("syncUserProfile", { userId: TEST_USER_ID, email: "regression-test@example.com" });
+
     // Test 2: Get Seed Questions
     const questions = await apiCall("getQuestions", { sessionId: session.id });
     assert(questions.length >= 2, `getQuestions returns ${questions.length} questions for seed session.`);
 
     // Test 3: Create New Session
-    newSession = await apiCall("createSession", { userId: "test-regression-user-id", title: "Automated Regression Room" });
+    newSession = await apiCall("createSession", { userId: TEST_USER_ID, title: "Automated Regression Room" });
     assert(newSession.title === "Automated Regression Room" && newSession.status === "inactive", "createSession creates a new inactive room.");
 
     // Test 4: Activate Session
@@ -130,7 +137,7 @@ async function runTests() {
   } finally {
     console.log("🧹 Running teardown cleanup for regression test data...");
     try {
-      await apiCall("cleanupTestData", { userId: "test-regression-user-id" });
+      await apiCall("cleanupTestData", { userId: TEST_USER_ID });
       console.log("🗑️ Test database successfully cleared of test-pollution sessions.");
     } catch (cleanupErr) {
       console.error("⚠️ Failed to clean up test session:", cleanupErr.message);

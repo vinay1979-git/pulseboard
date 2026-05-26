@@ -58,7 +58,7 @@ export default function Home() {
             </Button>
             <Button asChild variant="secondary" className="h-12 px-6 border border-cyan-400/30 bg-cyan-400/5 hover:bg-cyan-400/10 text-cyan-400 font-extrabold flex items-center justify-center gap-2">
               <Link href="/join">
-                Join a session
+                Join a PulseRoom
                 <Activity className="size-4 animate-pulse" />
               </Link>
             </Button>

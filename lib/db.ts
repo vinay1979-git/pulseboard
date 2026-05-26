@@ -191,7 +191,8 @@ async function getSessionCodeByQuestionId(questionId: string): Promise<string | 
 // Database Adapter Methods
 
 export async function getSessions(userId: string, isSuperAdmin = false): Promise<Session[]> {
-  if (isSupabaseConfigured()) {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (isSupabaseConfigured() && (isSuperAdmin || uuidRegex.test(userId))) {
     try {
       const supabase = await createServerClient();
       let query = supabase.from("sessions").select("*");
@@ -403,7 +404,8 @@ export async function createSession(userId: string, title: string): Promise<Sess
     updated_at: new Date().toISOString(),
   };
 
-  if (isSupabaseConfigured()) {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (isSupabaseConfigured() && uuidRegex.test(userId)) {
     try {
       const supabase = await createServerClient();
       const { data, error } = await supabase
@@ -930,7 +932,8 @@ export async function reorderQuestions(sessionId: string, questionIds: string[])
 export async function syncUserProfile(userId: string, email: string, avatarUrl?: string | null): Promise<UserProfile> {
   const isVinay = email.toLowerCase() === "vinay1979@gmail.com";
   
-  if (isSupabaseConfigured()) {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (isSupabaseConfigured() && uuidRegex.test(userId)) {
     try {
       const supabase = await createServerClient();
       
@@ -1177,7 +1180,8 @@ export async function bulkImportQuestions(sessionId: string, questionsList: any[
 }
 
 export async function cleanupTestData(userId: string): Promise<void> {
-  if (isSupabaseConfigured()) {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (isSupabaseConfigured() && uuidRegex.test(userId)) {
     try {
       const supabase = await createServerClient();
       

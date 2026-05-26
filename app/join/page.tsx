@@ -68,17 +68,17 @@ export default function JoinPage() {
     try {
       const session = await clientDb.getSessionByCode(code);
       if (!session) {
-        setError("Session not found. Double check the code!");
+        setError("PulseRoom not found. Double check the code!");
         return;
       }
       if (session.status !== "active") {
-        setError("This session is currently inactive. Ask the presenter to activate it!");
+        setError("This PulseRoom is currently inactive. Ask the presenter to activate it!");
         return;
       }
 
       router.push(`/session/${code}`);
     } catch (err) {
-      setError("Error checking session code. Please try again.");
+      setError("Error checking PulseRoom code. Please try again.");
       console.error(err);
     } finally {
       setLoading(false);
@@ -110,7 +110,7 @@ export default function JoinPage() {
           <span className="flex h-14 w-14 mx-auto items-center justify-center rounded-full border border-cyan-400/25 bg-cyan-400/10 text-cyan-400 shadow-lg shadow-cyan-500/10 animate-pulse">
             <Activity className="size-6" />
           </span>
-          <h1 className="mt-5 text-3xl font-black tracking-tight text-white">Join a Room</h1>
+          <h1 className="mt-5 text-3xl font-black tracking-tight text-white">Join a PulseRoom</h1>
           <p className="mt-2 text-sm text-slate-400">
             Enter the 6-digit code shown on the presenter's screen.
           </p>
@@ -157,7 +157,7 @@ export default function JoinPage() {
               </>
             ) : (
               <>
-                Enter Pulse Room
+                Enter PulseRoom
                 <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
               </>
             )}

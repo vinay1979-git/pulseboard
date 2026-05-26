@@ -183,7 +183,7 @@ export default function SessionAudiencePage() {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center">
         <Loader2 className="size-8 animate-spin text-cyan-400" />
-        <p className="mt-4 text-sm text-slate-400 animate-pulse">Loading live session...</p>
+        <p className="mt-4 text-sm text-slate-400 animate-pulse">Loading live PulseRoom...</p>
       </div>
     );
   }
@@ -194,7 +194,7 @@ export default function SessionAudiencePage() {
         <ShieldAlert className="size-16 text-red-500 mb-6" />
         <h1 className="text-3xl font-extrabold">{error}</h1>
         <p className="text-slate-400 mt-2 max-w-md">
-          This session might have been deleted, or the URL code is incorrect.
+          This PulseRoom might have been deleted, or the URL code is incorrect.
         </p>
         <Button asChild className="mt-6">
           <Link href="/join">Go to Join Portal</Link>
@@ -236,7 +236,7 @@ export default function SessionAudiencePage() {
               </span>
               <h2 className="text-2xl font-black text-white">Waiting for Presenter</h2>
               <p className="mt-2 text-slate-400 text-sm">
-                This presentation session is currently closed. It will automatically load once the presenter activates the room.
+                This presentation PulseRoom is currently closed. It will automatically load once the presenter activates the PulseRoom.
               </p>
             </motion.div>
           ) : liveBatch.length === 0 ? (

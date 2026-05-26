@@ -53,7 +53,7 @@ export function DashboardWorkspace({
 
   async function handleCreateSessionDirect() {
     const trimmedName = newSessionName.trim();
-    if (!trimmedName || trimmedName.toLowerCase() === "untitled session" || loading) return;
+    if (!trimmedName || trimmedName.toLowerCase() === "untitled session" || trimmedName.toLowerCase() === "untitled pulseroom" || loading) return;
     setLoading(true);
     try {
       const created = await clientDb.createSession(userId, trimmedName);
@@ -111,10 +111,10 @@ export function DashboardWorkspace({
             Control Panel
           </p>
           <h1 className="mt-3 text-4xl font-black tracking-tight text-white sm:text-5xl">
-            Live Rooms
+            Live PulseRooms
           </h1>
           <p className="mt-3 max-w-2xl text-slate-400">
-            Create and manage interactive real-time polling sessions here.
+            Create and manage interactive real-time polling PulseRooms here.
           </p>
         </div>
         
@@ -127,16 +127,16 @@ export function DashboardWorkspace({
           className="w-full sm:w-fit h-12 px-6 bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-extrabold flex items-center justify-center gap-2 group shadow-lg shadow-cyan-500/10 cursor-pointer"
         >
           <FilePlus2 className="size-4 transition-transform group-hover:scale-110" />
-          Create Session
+          Create New PulseRoom
         </Button>
       </div>
 
       {/* Stats Board */}
       <section className="mb-8 grid gap-4 sm:grid-cols-3">
         {[
-          { label: "Total Sessions", val: totalSessions, icon: Layers },
-          { label: "Active Live Rooms", val: activeSessions, icon: Radio, highlight: true },
-          { label: "Inactive Rooms", val: inactiveSessions, icon: CalendarClock }
+          { label: "Total PulseRooms", val: totalSessions, icon: Layers },
+          { label: "Active Live PulseRooms", val: activeSessions, icon: Radio, highlight: true },
+          { label: "Inactive PulseRooms", val: inactiveSessions, icon: CalendarClock }
         ].map(({ label, val, icon: Icon, highlight }, index) => (
           <motion.div
             key={label}
@@ -165,10 +165,10 @@ export function DashboardWorkspace({
           <Input
             id="search-query"
             name="search-query"
-            aria-label="Search sessions by name"
+            aria-label="Search PulseRooms by name"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search sessions by name"
+            placeholder="Search PulseRooms by name"
             className="pl-9 h-11 bg-slate-950/40 border-white/5 text-white focus:border-cyan-400"
           />
         </div>
@@ -180,12 +180,12 @@ export function DashboardWorkspace({
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/10 text-cyan-400 shadow-md animate-pulse">
             <Radio className="size-6" />
           </div>
-          <h2 className="mt-5 text-2xl font-black text-white">No polling sessions yet</h2>
+          <h2 className="mt-5 text-2xl font-black text-white">No polling PulseRooms yet</h2>
           <p className="mx-auto mt-2 max-w-md text-slate-400 text-sm">
-            Create your first PulseBoard live session to start asking questions and receiving responses in real-time.
+            Create your first PulseBoard live PulseRoom to start asking questions and receiving responses in real-time.
           </p>
           <p className="mx-auto mt-4 max-w-md text-cyan-400 font-extrabold text-xs uppercase tracking-wider bg-cyan-500/10 border border-cyan-500/20 py-2 px-4 rounded-full w-fit">
-            Create your first session by clicking 'Create session' at the top of the page.
+            Create your first PulseRoom by clicking 'Create New PulseRoom' at the top of the page.
           </p>
         </section>
       ) : (
@@ -269,7 +269,7 @@ export function DashboardWorkspace({
                         size="sm"
                         className="h-11 px-4 border border-white/5 bg-slate-950/40 text-slate-300 hover:text-white cursor-pointer"
                         onClick={() => handleToggleStatus(session)}
-                        title={session.status === "active" ? "Deactivate Session" : "Activate Session"}
+                        title={session.status === "active" ? "Deactivate PulseRoom" : "Activate PulseRoom"}
                       >
                         <Radio className={`size-4 ${session.status === "active" ? "text-emerald-400 animate-pulse" : "text-slate-500"}`} />
                         {session.status === "active" ? "Deactivate" : "Activate"}
@@ -295,7 +295,7 @@ export function DashboardWorkspace({
                         size="sm"
                         className="h-8 w-8 p-0 rounded bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white border border-red-500/20 cursor-pointer"
                         onClick={() => handleDeleteSession(session.id)}
-                        title="Delete Session"
+                        title="Delete PulseRoom"
                       >
                         <Trash2 className="size-3.5" />
                       </Button>
@@ -328,10 +328,10 @@ export function DashboardWorkspace({
               <div className="absolute -inset-px rounded-2xl bg-gradient-to-tr from-cyan-500/5 to-violet-500/5 opacity-30 pointer-events-none" />
 
               <h2 className="text-xl font-black text-white relative z-10">
-                Name your Live Room
+                Name your Live PulseRoom
               </h2>
               <p className="mt-1 text-xs text-slate-400 relative z-10">
-                Every polling room needs a unique, custom descriptive title.
+                Every polling PulseRoom needs a unique, custom descriptive title.
               </p>
 
               <form
@@ -343,7 +343,7 @@ export function DashboardWorkspace({
               >
                 <div>
                   <label htmlFor="session-name-input" className="mb-1.5 block text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Room Name
+                    PulseRoom Name
                   </label>
                   <Input
                     id="session-name-input"
@@ -355,9 +355,9 @@ export function DashboardWorkspace({
                     onChange={(e) => setNewSessionName(e.target.value)}
                     className="h-11 bg-slate-950/50 border-white/10 text-white placeholder-slate-500 focus:border-cyan-400 text-sm font-medium"
                   />
-                  {newSessionName.trim().toLowerCase() === "untitled session" && (
+                  {(newSessionName.trim().toLowerCase() === "untitled session" || newSessionName.trim().toLowerCase() === "untitled pulseroom") && (
                     <p className="mt-1.5 text-[10px] font-bold text-rose-400 uppercase tracking-wider">
-                      "Untitled Session" is not a valid room name
+                      "Untitled PulseRoom" is not a valid PulseRoom name
                     </p>
                   )}
                 </div>
@@ -376,7 +376,8 @@ export function DashboardWorkspace({
                     disabled={
                       loading ||
                       !newSessionName.trim() ||
-                      newSessionName.trim().toLowerCase() === "untitled session"
+                      newSessionName.trim().toLowerCase() === "untitled session" ||
+                      newSessionName.trim().toLowerCase() === "untitled pulseroom"
                     }
                     className="h-10 px-5 text-xs font-black uppercase tracking-wider bg-cyan-500 hover:bg-cyan-600 disabled:opacity-30 disabled:pointer-events-none text-slate-950 shadow-lg shadow-cyan-500/10 cursor-pointer"
                   >
@@ -386,7 +387,7 @@ export function DashboardWorkspace({
                         Creating...
                       </>
                     ) : (
-                      "Create Room"
+                      "Create PulseRoom"
                     )}
                   </Button>
                 </div>

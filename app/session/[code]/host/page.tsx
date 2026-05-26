@@ -121,11 +121,11 @@ export default function HostConsolePage() {
         type: "session_status",
         payload: { status: "active" },
       });
-      setActionMessage("Session activated successfully!");
+      setActionMessage("PulseRoom activated successfully!");
       setTimeout(() => setActionMessage(""), 2000);
     } catch (err: any) {
       console.error(err);
-      setActionMessage(`Error: ${err.message || "Failed to activate session"}`);
+      setActionMessage(`Error: ${err.message || "Failed to activate PulseRoom"}`);
       setTimeout(() => setActionMessage(""), 4000);
     }
   };
@@ -246,7 +246,7 @@ export default function HostConsolePage() {
         type: "session_status",
         payload: { status: nextStatus },
       });
-      setActionMessage(`Session ${nextStatus === "active" ? "activated" : "deactivated"} successfully!`);
+      setActionMessage(`PulseRoom ${nextStatus === "active" ? "activated" : "deactivated"} successfully!`);
       setTimeout(() => setActionMessage(""), 2000);
     } catch (err: any) {
       console.error(err);
@@ -803,7 +803,7 @@ export default function HostConsolePage() {
   }
 
   return (
-    <AppShell email="Presenter Console" identityLabel={`Active Room Pin: ${code}`} role={userRole}>
+    <AppShell email="Presenter Console" identityLabel={`Active PulseRoom Pin: ${code}`} role={userRole}>
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         
         {/* Presenter Actions Banner - Sleek Dark overlay */}
@@ -821,7 +821,7 @@ export default function HostConsolePage() {
                 onChange={(e) => setEditTitle(e.target.value)}
                 onBlur={handleSaveTitle}
                 className="text-2xl font-black text-white bg-transparent border-b border-transparent hover:border-white/20 focus:border-cyan-400 focus:outline-none w-full max-w-xl transition-all duration-200"
-                placeholder="Untitled Session"
+                placeholder="Untitled PulseRoom"
               />
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-400">
                 <span className="flex items-center gap-1">
@@ -852,18 +852,6 @@ export default function HostConsolePage() {
           </div>
           
           <div className="flex flex-wrap gap-2.5 relative z-10">
-            <Button
-              onClick={handleToggleSessionStatus}
-              className={`h-11 px-5 font-black flex items-center gap-2 cursor-pointer shadow-lg ${
-                session.status === "active"
-                  ? "bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20"
-                  : "bg-emerald-500 hover:bg-emerald-600 text-slate-950"
-              }`}
-            >
-              <Radio className={`size-4 ${session.status === "active" ? "animate-pulse" : ""}`} />
-              {session.status === "active" ? "Deactivate Session" : "Activate Session"}
-            </Button>
-
             <Button onClick={handleCopyLink} variant="secondary" className="h-11 px-5 border border-white/5 bg-slate-950/40 hover:bg-slate-950 text-white font-bold flex items-center gap-2">
               <Share2 className="size-4 text-cyan-400" />
               Copy Join Link
@@ -877,36 +865,54 @@ export default function HostConsolePage() {
           </div>
         </div>
 
-        {/* Warning Banner if Inactive */}
-        {session.status === "inactive" && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-6 border-2 border-amber-500/30 bg-amber-500/10 rounded-2xl p-5 shadow-2xl backdrop-blur-2xl relative overflow-hidden flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
-          >
-            <div className="absolute -inset-px rounded-2xl bg-gradient-to-tr from-amber-500/5 to-transparent pointer-events-none" />
-            <div className="flex items-start gap-3.5 z-10">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400">
-                <Lock className="size-5 shrink-0" />
-              </span>
-              <div>
-                <h3 className="text-base font-extrabold text-amber-300">Room is Inactive</h3>
-                <p className="text-xs text-slate-300 mt-0.5">
-                  Voters cannot join or submit answers while the room is inactive. Activate it now to let them in!
-                </p>
-              </div>
+        {/* Dynamic Status Banner */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`mb-6 border rounded-2xl p-5 shadow-2xl backdrop-blur-2xl relative overflow-hidden flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 transition-colors duration-300 ${
+            session.status === "active"
+              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+              : "border-slate-500/20 bg-slate-900/40 text-slate-300"
+          }`}
+        >
+          <div className="absolute -inset-px rounded-2xl bg-gradient-to-tr from-white/[0.02] to-transparent pointer-events-none" />
+          <div className="flex items-start gap-3.5 z-10">
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+              session.status === "active"
+                ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
+                : "bg-slate-800/40 border border-white/5 text-slate-400"
+            }`}>
+              {session.status === "active" ? (
+                <Radio className="size-5 animate-pulse" />
+              ) : (
+                <Lock className="size-5" />
+              )}
+            </span>
+            <div>
+              <h3 className="text-base font-extrabold text-white">
+                {session.status === "active" ? "Room is active" : "The Room is Inactive"}
+              </h3>
+              <p className="text-xs text-slate-300 mt-0.5">
+                {session.status === "active"
+                  ? "Voters can successfully join and submit real-time answers to live questions."
+                  : "Voters cannot join or submit answers while the room is inactive. Activate it to open participation."}
+              </p>
             </div>
-            <div className="z-10">
-              <Button
-                onClick={handleActivateSession}
-                className="h-11 px-6 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black flex items-center gap-2 cursor-pointer shadow-lg shadow-amber-500/10"
-              >
-                <Radio className="size-4 animate-pulse" />
-                Activate Session
-              </Button>
-            </div>
-          </motion.div>
-        )}
+          </div>
+          <div className="z-10 shrink-0">
+            <Button
+              onClick={handleToggleSessionStatus}
+              className={`h-11 px-6 font-black flex items-center gap-2 cursor-pointer shadow-lg transition-all duration-200 ${
+                session.status === "active"
+                  ? "bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20"
+                  : "bg-emerald-500 hover:bg-emerald-600 text-slate-950 shadow-emerald-500/10"
+              }`}
+            >
+              <Radio className={`size-4 ${session.status === "active" ? "" : "animate-pulse"}`} />
+              {session.status === "active" ? "Deactivate PulseRoom" : "Activate PulseRoom"}
+            </Button>
+          </div>
+        </motion.div>
 
         {/* Real-time Status Alert */}
         <AnimatePresence>
@@ -922,333 +928,218 @@ export default function HostConsolePage() {
           )}
         </AnimatePresence>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
-          
-          {/* LEFT: Live Results & Visualizations */}
-          <div className="grid gap-6">
-            <section className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 shadow-2xl backdrop-blur-2xl relative overflow-hidden">
-              <div className="absolute -inset-px rounded-2xl bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
-
-              <div className="mb-6 flex items-center justify-between border-b border-white/5 pb-4 relative z-10">
-                <div className="flex-1 min-w-0 pr-4">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 flex items-center gap-2">
-                    Live Stream Results
-                    <span className="inline-flex items-center rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] font-black text-cyan-400 border border-cyan-500/20 uppercase tracking-widest">
-                      Code: {code}
-                    </span>
-                  </p>
-                  <h2 className="text-2xl font-black mt-1 text-white whitespace-normal break-words leading-snug">
-                    {activeQuestion ? activeQuestion.prompt_text : "No Live Question"}
-                  </h2>
-                </div>
-                
-                {activeQuestion && (
-                  <Button
-                    type="button"
-                    variant="danger"
-                    size="sm"
-                    onClick={handleResetResponses}
-                    className="h-9 py-0 px-3 flex items-center gap-1.5 font-bold cursor-pointer"
-                    title="Reset Votes"
-                  >
-                    <RefreshCw className="size-3.5" />
-                    Reset Votes
-                  </Button>
-                )}
-              </div>
-
-              <div className="relative z-10">
-                {!activeQuestion ? (
-                  <div className="h-96 flex flex-col items-center justify-center text-center">
-                    <HelpCircle className="size-16 text-slate-700 animate-pulse mb-4" />
-                    <h3 className="text-xl font-black text-slate-300">Screen is blank</h3>
-                    <p className="text-sm text-slate-500 mt-2 max-w-sm">
-                      Select a question from your questionnaire stack on the right and click "Launch" to start streaming results!
-                    </p>
-                  </div>
-                ) : responses.length === 0 ? (
-                  <div className="h-96 flex flex-col items-center justify-center text-center">
-                    <Loader2 className="size-10 text-cyan-400 animate-spin mb-4" />
-                    <h3 className="text-xl font-black text-slate-300">Waiting for responses...</h3>
-                    <p className="text-sm text-slate-500 mt-2 max-w-sm">
-                      Streaming room is active. Give your audience the code <span className="font-extrabold text-cyan-400 tracking-wider">{code}</span> to submit their answers.
-                    </p>
-                  </div>
-                ) : activeQuestion.type === "multiple_choice" ? (
-                  /* Recharts horizontal dynamic bar chart */
-                  <div className="h-96 w-full pt-4">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={chartData}
-                        layout="vertical"
-                        margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" opacity={0.03} />
-                        <XAxis type="number" allowDecimals={false} stroke="#475569" tick={{ fill: "#64748b" }} />
-                        <YAxis
-                          dataKey="name"
-                          type="category"
-                          width={120}
-                          tick={{ fill: "#e2e8f0", fontSize: 13, fontWeight: "bold" }}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#070a13",
-                            border: "1px solid rgba(255,255,255,0.08)",
-                            borderRadius: "12px",
-                            color: "#ffffff",
-                            boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
-                          }}
-                        />
-                        <Bar
-                          dataKey="votes"
-                          fill="#06b6d4"
-                          radius={[0, 8, 8, 0]}
-                          animationDuration={500}
-                          barSize={24}
-                        >
-                          <LabelList
-                            dataKey="votes"
-                            position="insideRight"
-                            fill="#ffffff"
-                            fontWeight="black"
-                            fontSize={11}
-                            offset={8}
-                          />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : (
-                  /* Custom Premium SVGs React + Framer Motion Word Cloud */
-                  <div className="h-96 w-full border border-white/5 rounded-xl bg-slate-950/40 overflow-hidden relative shadow-inner flex items-center justify-center">
-                    {wordCloudWords.map((word, index) => {
-                      const fontSize = (16 + Math.min(word.count * 8, 48)) * scale; 
-                      
-                      return (
-                        <span
-                          key={word.text}
-                          className={`font-black absolute tracking-tight select-none cursor-pointer py-1 px-3 rounded-lg transition duration-150 hover:bg-white/5 ${getWordColor(
-                            index
-                          )}`}
-                          style={{
-                            fontSize: `${fontSize}px`,
-                            lineHeight: "1.1",
-                            left: `calc(50% + ${word.x * scale}px)`,
-                            top: `calc(50% + ${word.y * scale}px)`,
-                            transform: "translate(-50%, -50%)",
-                          }}
-                          title={`${word.count} entries`}
-                        >
-                          {word.text}
-                          {word.count > 1 && (
-                            <span className="text-[10px] align-super ml-1 opacity-70 bg-white/10 px-1.5 py-0.5 rounded-full font-extrabold">
-                              x{word.count}
-                            </span>
-                          )}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </section>
+        {/* TOP: Questionnaire Manager & Creator (Full Width) */}
+        <section className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 shadow-2xl backdrop-blur-2xl relative mb-6">
+          <div className="flex items-center justify-between border-b border-white/5 pb-3">
+            <h3 className="text-lg font-black flex items-center gap-2 text-white">
+              <Plus className="size-4 text-cyan-400" />
+              Add Questions
+            </h3>
+            
+            {/* Tabs Selector */}
+            <div className="flex rounded-lg border border-white/5 bg-slate-950/45 p-1">
+              <button
+                type="button"
+                onClick={() => setShowCsvImporter(false)}
+                className={`h-7 px-3 rounded text-[11px] font-bold transition cursor-pointer ${
+                  !showCsvImporter
+                    ? "bg-white/10 text-white shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Manual
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCsvImporter(true)}
+                className={`h-7 px-3 rounded text-[11px] font-bold transition cursor-pointer ${
+                  showCsvImporter
+                    ? "bg-white/10 text-white shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                CSV Import
+              </button>
+            </div>
           </div>
 
-          {/* RIGHT: Questionnaire Manager & Creator */}
-          <div className="grid gap-6">
-            
-            {/* Create Question Stack Form / CSV Bulk Importer */}
-            <section className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 shadow-2xl backdrop-blur-2xl relative">
-              <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                <h3 className="text-lg font-black flex items-center gap-2 text-white">
-                  <Plus className="size-4 text-cyan-400" />
-                  Add Questions
-                </h3>
+          {!showCsvImporter ? (
+            <form onSubmit={handleAddQuestion} className="mt-4 flex flex-col gap-4">
+              <div className="flex flex-col md:flex-row gap-4 items-start w-full">
                 
-                {/* Tabs Selector */}
-                <div className="flex rounded-lg border border-white/5 bg-slate-950/45 p-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowCsvImporter(false)}
-                    className={`h-7 px-3 rounded text-[11px] font-bold transition cursor-pointer ${
-                      !showCsvImporter
-                        ? "bg-white/10 text-white shadow-sm"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
+                {/* Question Type */}
+                <div className="w-full md:w-56 shrink-0">
+                  <label className="mb-1.5 block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Question Type
+                  </label>
+                  <div className="grid grid-cols-2 gap-1 rounded-lg border border-white/5 bg-slate-950/45 p-1 h-11">
+                    {(["multiple_choice", "word_cloud"] as const).map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setNewType(type)}
+                        className={`h-full rounded text-[11px] font-bold capitalize transition cursor-pointer ${
+                          newType === type
+                            ? "bg-white/10 text-white shadow-sm"
+                            : "text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        {type === "multiple_choice" ? "MC Poll" : "Word Cloud"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Question Prompt */}
+                <div className="flex-1 min-w-0 w-full">
+                  <label htmlFor="prompt" className="mb-1.5 block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Question Prompt
+                  </label>
+                  <Input
+                    id="prompt"
+                    required
+                    placeholder="e.g. Rate your confidence"
+                    value={newPrompt}
+                    onChange={(e) => setNewPrompt(e.target.value)}
+                    className="text-sm h-11 bg-slate-950/40 border-white/5 text-white w-full"
+                  />
+                </div>
+
+                {/* Save Button */}
+                <div className="w-full md:w-auto shrink-0 self-end">
+                  <Button
+                    type="submit"
+                    className="w-full md:w-auto h-11 px-6 text-xs font-extrabold cursor-pointer"
+                    disabled={submittingQuestion}
                   >
-                    Manual
-                  </button>
-                  <button
+                    Save to PulseRoom Stack
+                  </Button>
+                </div>
+
+              </div>
+
+              {/* Options Panel - renders below/alongside prompt when MC is selected */}
+              {newType === "multiple_choice" && (
+                <div className="rounded-xl border border-white/5 bg-slate-950/20 p-4 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      Options (2 - 6 options)
+                    </label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-6 px-1.5 text-[10px] uppercase font-black text-cyan-400 hover:bg-cyan-400/10 cursor-pointer"
+                      onClick={addOptionInput}
+                      disabled={mcOptions.length >= 6}
+                    >
+                      + Add option
+                    </Button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                    {mcOptions.map((opt, index) => (
+                      <div key={index} className="flex gap-1.5 items-center">
+                        <Input
+                          id={`option-${index}`}
+                          name={`option-${index}`}
+                          aria-label={`Option ${index + 1}`}
+                          required
+                          placeholder={`Option ${index + 1}`}
+                          value={opt}
+                          onChange={(e) => handleOptionChange(index, e.target.value)}
+                          className="h-9 text-xs bg-slate-950/40 border-white/5 text-white flex-1 min-w-0"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeOptionInput(index)}
+                          disabled={mcOptions.length <= 2}
+                          className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-30 cursor-pointer"
+                          title="Remove Option"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </form>
+          ) : (
+            <div className="mt-4 space-y-4 pr-1">
+              <div className="rounded-xl border border-dashed border-white/10 bg-slate-950/30 p-5 text-center flex flex-col items-center justify-center">
+                <Upload className="size-8 text-cyan-400 animate-pulse mb-3" />
+                <h4 className="text-sm font-extrabold text-white">Import questions via CSV</h4>
+                <p className="text-xs text-slate-400 mt-1 max-w-[280px] mx-auto">
+                  Quickly upload multiple questions in bulk. Supported types: OP (Multiple Choice) & WC (Word Cloud).
+                </p>
+                
+                <input
+                  type="file"
+                  ref={csvFileInputRef}
+                  onChange={handleCSVUpload}
+                  accept=".csv"
+                  className="hidden"
+                />
+                
+                <div className="mt-4 flex flex-col sm:flex-row gap-2 w-full justify-center">
+                  <Button
                     type="button"
-                    onClick={() => setShowCsvImporter(true)}
-                    className={`h-7 px-3 rounded text-[11px] font-bold transition cursor-pointer ${
-                      showCsvImporter
-                        ? "bg-white/10 text-white shadow-sm"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
+                    onClick={() => csvFileInputRef.current?.click()}
+                    className="h-10 text-xs font-extrabold bg-cyan-500 hover:bg-cyan-600 text-slate-950 cursor-pointer shadow-lg shadow-cyan-500/10"
                   >
-                    CSV Import
-                  </button>
+                    Choose CSV File
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleDownloadSampleCSV}
+                    className="h-10 text-xs font-extrabold border border-white/5 bg-slate-950/60 hover:bg-slate-950 text-white flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="size-3.5 text-cyan-400" />
+                    Download Template
+                  </Button>
                 </div>
               </div>
 
-              {!showCsvImporter ? (
-                <form onSubmit={handleAddQuestion} className="mt-4 space-y-4 pr-1">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-bold text-slate-500 uppercase tracking-wider">
-                      Question Type
-                    </label>
-                    <div className="grid grid-cols-2 gap-1 rounded-lg border border-white/5 bg-slate-950/45 p-1">
-                      {(["multiple_choice", "word_cloud"] as const).map((type) => (
-                        <button
-                          key={type}
-                          type="button"
-                          onClick={() => setNewType(type)}
-                          className={`h-8 rounded text-xs font-bold capitalize transition cursor-pointer ${
-                            newType === type
-                              ? "bg-white/10 text-white shadow-sm"
-                              : "text-slate-400 hover:text-slate-200"
-                          }`}
-                        >
-                          {type === "multiple_choice" ? "Multiple Choice" : "Word Cloud"}
-                        </button>
-                      ))}
-                    </div>
+              {/* All-or-nothing Visual Error Log Container */}
+              {csvErrors.length > 0 && (
+                <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 relative overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-red-500/10 pb-2 mb-2">
+                    <span className="text-xs font-black text-red-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <X className="size-3.5" />
+                      Import Errors ({csvErrors.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCsvErrors([])}
+                      className="text-[10px] font-bold text-slate-400 hover:text-slate-200 cursor-pointer"
+                    >
+                      Clear
+                    </button>
                   </div>
-
-                  <div>
-                    <label htmlFor="prompt" className="mb-1.5 block text-xs font-bold text-slate-500 uppercase tracking-wider">
-                      Question Prompt
-                    </label>
-                    <Input
-                      id="prompt"
-                      required
-                      placeholder="e.g. Rate your confidence"
-                      value={newPrompt}
-                      onChange={(e) => setNewPrompt(e.target.value)}
-                      className="text-sm h-11 bg-slate-950/40 border-white/5 text-white"
-                    />
+                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 text-[11px] font-mono text-red-300">
+                    {csvErrors.map((err, i) => (
+                      <div key={i} className="flex gap-1.5 items-start leading-relaxed">
+                        <span className="text-red-500 font-extrabold shrink-0">&bull;</span>
+                        <span>{err}</span>
+                      </div>
+                    ))}
                   </div>
-
-                  {newType === "multiple_choice" && (
-                    <div className="space-y-2">
-                      <label className="block text-xs font-bold text-slate-500 flex justify-between items-center uppercase tracking-wider">
-                        <span>Options (2 - 6 options)</span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="h-6 px-1.5 text-[10px] uppercase font-black text-cyan-400 hover:bg-cyan-400/10 cursor-pointer"
-                          onClick={addOptionInput}
-                          disabled={mcOptions.length >= 6}
-                        >
-                          + Add option
-                        </Button>
-                      </label>
-                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                        {mcOptions.map((opt, index) => (
-                          <div key={index} className="flex gap-1.5 items-center">
-                            <Input
-                              id={`option-${index}`}
-                              name={`option-${index}`}
-                              aria-label={`Option ${index + 1}`}
-                              required
-                              placeholder={`Option ${index + 1}`}
-                              value={opt}
-                              onChange={(e) => handleOptionChange(index, e.target.value)}
-                              className="h-9 text-xs bg-slate-950/40 border-white/5 text-white"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeOptionInput(index)}
-                              disabled={mcOptions.length <= 2}
-                              className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-30 cursor-pointer"
-                              title="Remove Option"
-                            >
-                              <X className="size-4" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <Button type="submit" className="w-full h-11 text-xs font-extrabold cursor-pointer" disabled={submittingQuestion}>
-                    Save to Session Stack
-                  </Button>
-                </form>
-              ) : (
-                <div className="mt-4 space-y-4 pr-1">
-                  <div className="rounded-xl border border-dashed border-white/10 bg-slate-950/30 p-5 text-center flex flex-col items-center justify-center">
-                    <Upload className="size-8 text-cyan-400 animate-pulse mb-3" />
-                    <h4 className="text-sm font-extrabold text-white">Import questions via CSV</h4>
-                    <p className="text-xs text-slate-400 mt-1 max-w-[280px] mx-auto">
-                      Quickly upload multiple questions in bulk. Supported types: OP (Multiple Choice) & WC (Word Cloud).
-                    </p>
-                    
-                    <input
-                      type="file"
-                      ref={csvFileInputRef}
-                      onChange={handleCSVUpload}
-                      accept=".csv"
-                      className="hidden"
-                    />
-                    
-                    <div className="mt-4 flex flex-col sm:flex-row gap-2 w-full justify-center">
-                      <Button
-                        type="button"
-                        onClick={() => csvFileInputRef.current?.click()}
-                        className="h-10 text-xs font-extrabold bg-cyan-500 hover:bg-cyan-600 text-slate-950 cursor-pointer shadow-lg shadow-cyan-500/10"
-                      >
-                        Choose CSV File
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={handleDownloadSampleCSV}
-                        className="h-10 text-xs font-extrabold border border-white/5 bg-slate-950/60 hover:bg-slate-950 text-white flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <Download className="size-3.5 text-cyan-400" />
-                        Download Template
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* All-or-nothing Visual Error Log Container */}
-                  {csvErrors.length > 0 && (
-                    <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 relative overflow-hidden">
-                      <div className="flex items-center justify-between border-b border-red-500/10 pb-2 mb-2">
-                        <span className="text-xs font-black text-red-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <X className="size-3.5" />
-                          Import Errors ({csvErrors.length})
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setCsvErrors([])}
-                          className="text-[10px] font-bold text-slate-400 hover:text-slate-200 cursor-pointer"
-                        >
-                          Clear
-                        </button>
-                      </div>
-                      <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 text-[11px] font-mono text-red-300">
-                        {csvErrors.map((err, i) => (
-                          <div key={i} className="flex gap-1.5 items-start leading-relaxed">
-                            <span className="text-red-500 font-extrabold shrink-0">&bull;</span>
-                            <span>{err}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
-            </section>
+            </div>
+          )}
+        </section>
 
-            {/* Question Stack List */}
-            <section className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 shadow-2xl backdrop-blur-2xl relative flex flex-col">
+        {/* BOTTOM: Workspace Split-Screen (Span 5 Left, Span 7 Right) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          {/* LEFT COLUMN: Question Stack (Span 5) */}
+          <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
+            <section className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 shadow-2xl backdrop-blur-2xl relative flex flex-col h-full">
               <h3 className="text-lg font-black border-b border-white/5 pb-3 flex items-center gap-2 text-white">
                 <BarChart3 className="size-4 text-cyan-400" />
-                Question Stack ({questions.length})
+                PulseRoom Stack ({questions.length})
               </h3>
 
               {/* Scrollable Container */}
@@ -1296,7 +1187,7 @@ export default function HostConsolePage() {
                 <div className="space-y-2.5">
                   {questions.length === 0 ? (
                     <p className="text-xs text-slate-500 text-center py-8">
-                      Session stack is empty. Create some questions above!
+                      PulseRoom stack is empty. Create some questions above!
                     </p>
                   ) : (
                     paginatedQuestions.map((q, idx) => {
@@ -1455,8 +1346,139 @@ export default function HostConsolePage() {
                 </div>
               )}
             </section>
-            
           </div>
+
+          {/* RIGHT COLUMN: Live Results & Visualizations (Span 7) */}
+          <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
+            <section className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 shadow-2xl backdrop-blur-2xl relative overflow-hidden flex flex-col h-full justify-between">
+              <div className="absolute -inset-px rounded-2xl bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
+
+              <div className="mb-6 flex items-center justify-between border-b border-white/5 pb-4 relative z-10">
+                <div className="flex-1 min-w-0 pr-4">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                    Live Stream Results
+                    <span className="inline-flex items-center rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] font-black text-cyan-400 border border-cyan-500/20 uppercase tracking-widest">
+                      Code: {code}
+                    </span>
+                  </p>
+                  <h2 className="text-2xl font-black mt-1 text-white whitespace-normal break-words leading-snug">
+                    {activeQuestion ? activeQuestion.prompt_text : "No Live Question"}
+                  </h2>
+                </div>
+                
+                {activeQuestion && (
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    onClick={handleResetResponses}
+                    className="h-9 py-0 px-3 flex items-center gap-1.5 font-bold cursor-pointer"
+                    title="Reset Votes"
+                  >
+                    <RefreshCw className="size-3.5" />
+                    Reset Votes
+                  </Button>
+                )}
+              </div>
+
+              <div className="relative z-10 flex-1 flex flex-col justify-center min-h-[384px]">
+                {!activeQuestion ? (
+                  <div className="h-96 flex flex-col items-center justify-center text-center">
+                    <HelpCircle className="size-16 text-slate-700 animate-pulse mb-4" />
+                    <h3 className="text-xl font-black text-slate-300">Screen is blank</h3>
+                    <p className="text-sm text-slate-500 mt-2 max-w-sm">
+                      Select a question from your PulseRoom stack on the left and click "Launch" to start streaming results!
+                    </p>
+                  </div>
+                ) : responses.length === 0 ? (
+                  <div className="h-96 flex flex-col items-center justify-center text-center">
+                    <Loader2 className="size-10 text-cyan-400 animate-spin mb-4" />
+                    <h3 className="text-xl font-black text-slate-300">Waiting for responses...</h3>
+                    <p className="text-sm text-slate-500 mt-2 max-w-sm">
+                      Streaming room is active. Give your audience the code <span className="font-extrabold text-cyan-400 tracking-wider">{code}</span> to submit their answers.
+                    </p>
+                  </div>
+                ) : activeQuestion.type === "multiple_choice" ? (
+                  /* Recharts horizontal dynamic bar chart */
+                  <div className="h-96 w-full pt-4">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={chartData}
+                        layout="vertical"
+                        margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.03} />
+                        <XAxis type="number" allowDecimals={false} stroke="#475569" tick={{ fill: "#64748b" }} />
+                        <YAxis
+                          dataKey="name"
+                          type="category"
+                          width={120}
+                          tick={{ fill: "#e2e8f0", fontSize: 13, fontWeight: "bold" }}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#070a13",
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            borderRadius: "12px",
+                            color: "#ffffff",
+                            boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+                          }}
+                        />
+                        <Bar
+                          dataKey="votes"
+                          fill="#06b6d4"
+                          radius={[0, 8, 8, 0]}
+                          animationDuration={500}
+                          barSize={24}
+                        >
+                          <LabelList
+                            dataKey="votes"
+                            position="insideRight"
+                            fill="#ffffff"
+                            fontWeight="black"
+                            fontSize={11}
+                            offset={8}
+                          />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  /* Custom Premium SVGs React + Framer Motion Word Cloud */
+                  <div className="h-96 w-full border border-white/5 rounded-xl bg-slate-950/40 overflow-hidden relative shadow-inner flex items-center justify-center">
+                    {wordCloudWords.map((word, index) => {
+                      const fontSize = (16 + Math.min(word.count * 8, 48)) * scale; 
+                      
+                      return (
+                        <span
+                          key={word.text}
+                          className={`font-black absolute tracking-tight select-none cursor-pointer py-1 px-3 rounded-lg transition duration-150 hover:bg-white/5 ${getWordColor(
+                            index
+                          )}`}
+                          style={{
+                            fontSize: `${fontSize}px`,
+                            lineHeight: "1.1",
+                            left: `calc(50% + ${word.x * scale}px)`,
+                            top: `calc(50% + ${word.y * scale}px)`,
+                            transform: "translate(-50%, -50%)",
+                          }}
+                          title={`${word.count} entries`}
+                        >
+                          {word.text}
+                          {word.count > 1 && (
+                            <span className="text-[10px] align-super ml-1 opacity-70 bg-white/10 px-1.5 py-0.5 rounded-full font-extrabold">
+                              x{word.count}
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+
         </div>
       </div>
     </AppShell>

@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: Home },
-  { label: "Join Session", href: "/join", icon: Activity },
+  { label: "Join PulseRoom", href: "/join", icon: Activity },
   { label: "Profile", href: "/profile", icon: UserRound },
 ];
 
@@ -83,7 +83,7 @@ export function AppShell({
 
         {/* Pro Badge */}
         <div className="absolute bottom-6 left-4 right-4 rounded-xl border border-cyan-500/10 bg-cyan-500/5 p-4 backdrop-blur">
-          <p className="text-sm font-black text-cyan-400">Pulse Room Pro</p>
+          <p className="text-sm font-black text-cyan-400">PulseRoom Pro</p>
           <p className="mt-1.5 text-xs leading-5 text-slate-400">
             Create, manage, and present live word clouds and polls securely.
           </p>
@@ -104,7 +104,7 @@ export function AppShell({
 
             <div className="hidden lg:block">
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                Active Session Account
+                Active PulseRoom Account
               </p>
               <p className="text-sm font-extrabold text-slate-200 mt-0.5">
                 {identityLabel ?? email}
