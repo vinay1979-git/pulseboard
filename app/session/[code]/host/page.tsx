@@ -24,6 +24,8 @@ import {
   Download,
   ChevronDown,
   ChevronUp,
+  Trophy,
+  Medal,
 } from "lucide-react";
 import {
   BarChart,
@@ -65,6 +67,19 @@ export default function HostConsolePage() {
   const [editTitle, setEditTitle] = useState("");
   const [questionResponseCounts, setQuestionResponseCounts] = useState<Record<string, number>>({});
   
+  // Leaderboard state
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const activeSessionRef = useRef<Session | null>(null);
+
+  const reloadLeaderboard = async (sessId: string) => {
+    try {
+      const data = await clientDb.getParticipants(sessId);
+      setLeaderboard(data);
+    } catch (e) {
+      console.error("Failed to load leaderboard:", e);
+    }
+  };
+  
   // CSV Bulk Importer & Pagination states
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
   const [showCsvImporter, setShowCsvImporter] = useState(false);
@@ -100,6 +115,9 @@ export default function HostConsolePage() {
   const [newPrompt, setNewPrompt] = useState("");
   const [newType, setNewType] = useState<"multiple_choice" | "word_cloud">("multiple_choice");
   const [mcOptions, setMcOptions] = useState<string[]>(["Option 1", "Option 2"]);
+  const [correctOption, setCorrectOption] = useState<number | null>(null);
+  const [timerSecondsLeft, setTimerSecondsLeft] = useState<number | null>(null);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const getAudienceUrl = () => {
     if (typeof window === "undefined") return "";
@@ -298,7 +316,11 @@ export default function HostConsolePage() {
       }
       
       setSession(activeSession);
+      activeSessionRef.current = activeSession;
       setEditTitle(activeSession.title);
+      if (activeSession.auth_mode === "quiz_gmail") {
+        void reloadLeaderboard(activeSession.id);
+      }
 
       const dbQuestions = await clientDb.getQuestions(activeSession.id);
       setQuestions(dbQuestions);
@@ -341,6 +363,10 @@ export default function HostConsolePage() {
   }, [activeQuestion]);
 
   useEffect(() => {
+    activeSessionRef.current = session;
+  }, [session]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener("resize", handleResize);
@@ -363,6 +389,11 @@ export default function HostConsolePage() {
           ...prev,
           [event.payload.questionId]: (prev[event.payload.questionId] || 0) + 1,
         }));
+      } else if (event.type === "leaderboard-updated" || event.type === "leaderboard_updated") {
+        const currentSess = activeSessionRef.current;
+        if (currentSess) {
+          void reloadLeaderboard(currentSess.id);
+        }
       }
     });
 
@@ -370,6 +401,10 @@ export default function HostConsolePage() {
       const currentActive = activeQuestionRef.current;
       if (currentActive) {
         void reloadResponses(currentActive.id);
+      }
+      const currentSess = activeSessionRef.current;
+      if (currentSess && currentSess.auth_mode === "quiz_gmail") {
+        void reloadLeaderboard(currentSess.id);
       }
     }, 1500);
 
@@ -403,6 +438,9 @@ export default function HostConsolePage() {
   const removeOptionInput = (index: number) => {
     if (mcOptions.length <= 2) return;
     setMcOptions(mcOptions.filter((_, i) => i !== index));
+    if (correctOption && correctOption > mcOptions.length - 1) {
+      setCorrectOption(null);
+    }
   };
 
   const handleOptionChange = (index: number, val: string) => {
@@ -422,12 +460,14 @@ export default function HostConsolePage() {
         session.id,
         newType,
         newPrompt,
-        newType === "multiple_choice" ? mcOptions : []
+        newType === "multiple_choice" ? mcOptions : [],
+        newType === "multiple_choice" && session.auth_mode === "quiz_gmail" ? correctOption : null
       );
 
       setQuestions((current) => [...current, created]);
       setNewPrompt("");
       setMcOptions(["Option 1", "Option 2"]);
+      setCorrectOption(null);
 
       const updatedQuestions = await clientDb.getQuestions(session.id);
       const currentLive = updatedQuestions.find((q) => q.is_live);
@@ -450,9 +490,30 @@ export default function HostConsolePage() {
     }
   };
 
+  const handleAutoProgress = async (currentQId: string) => {
+    // latestQuestions lookup
+    const latestQuestions = [...questions];
+    const currentIdx = latestQuestions.findIndex(q => q.id === currentQId);
+    if (currentIdx !== -1 && currentIdx + 1 < latestQuestions.length) {
+      const nextQ = latestQuestions[currentIdx + 1];
+      void handleSetQuestionLive(nextQ.id);
+    } else {
+      setTimerSecondsLeft(null);
+      setActionMessage("Quiz session completed!");
+      setTimeout(() => setActionMessage(""), 3000);
+    }
+  };
+
   const handleSetQuestionLive = async (questionId: string) => {
     if (!session) return;
     try {
+      // Clear any existing timer
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      setTimerSecondsLeft(null);
+
       await clientDb.setQuestionLive(session.id, questionId);
       
       setQuestions((current) =>
@@ -475,6 +536,45 @@ export default function HostConsolePage() {
 
       setActionMessage(`Question now LIVE!`);
       setTimeout(() => setActionMessage(""), 2000);
+
+      // Start Auto-Launch countdown timer
+      if (session.auto_launch && session.timer_seconds && session.timer_seconds > 0) {
+        const duration = session.timer_seconds;
+        setTimerSecondsLeft(duration);
+
+        // Broadcast timer start
+        await broadcastSessionEvent(code, {
+          type: "questions_timer_start",
+          payload: { questionId, duration },
+        });
+
+        let timeLeft = duration;
+        timerIntervalRef.current = setInterval(async () => {
+          timeLeft -= 1;
+          setTimerSecondsLeft(timeLeft);
+          
+          if (timeLeft <= 0) {
+            if (timerIntervalRef.current) {
+              clearInterval(timerIntervalRef.current);
+              timerIntervalRef.current = null;
+            }
+
+            // Lock input / calculate scores
+            if (target && target.type === "multiple_choice" && target.correct_option) {
+              try {
+                await clientDb.calculateScores(target.id, target.correct_option);
+              } catch (e) {
+                console.error("Score calculation failed:", e);
+              }
+            }
+
+            // Move to next question after 5 seconds delay
+            setTimeout(() => {
+              void handleAutoProgress(questionId);
+            }, 5000);
+          }
+        }, 1000);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -554,9 +654,12 @@ export default function HostConsolePage() {
   };
 
   const handleDownloadSampleCSV = () => {
-    const headers = "QNo, Question, Question Type, Option1, Option2, Option3, Option4, Option5, Option6, Option7, Option8\n";
-    const sample1 = "1, Which UI frame do you prefer?, OP, Clean Cards, Glassmorphism Grid, Minimalist Row,,,,,,\n";
-    const sample2 = "2, Describe PulseBoard in one word, WC,,,,,,,,,,\n";
+    const isQuiz = session?.auth_mode === "quiz_gmail";
+    const headers = "QNo, Question, Question Type, Option1, Option2, Option3, Option4, Option5, Option6, Option7, Option8, Answer\n";
+    const sample1 = isQuiz
+      ? "1, What is the capital of France?, QZ, Berlin, Paris, London, Rome,,,,,, 2\n"
+      : "1, Which UI frame do you prefer?, OP, Clean Cards, Glassmorphism Grid, Minimalist Row,,,,,,\n";
+    const sample2 = "2, Describe PulseBoard in one word, WC,,,,,,,,,,,\n";
     const csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent(headers + sample1 + sample2);
     
     const link = document.createElement("a");
@@ -648,12 +751,12 @@ export default function HostConsolePage() {
         }
         expectedQNo++;
 
-        if (qType !== "OP" && qType !== "WC") {
-          errors.push(`Row ${rowNum}: Invalid Question Type (Must be exactly "OP" or "WC")`);
+        if (qType !== "OP" && qType !== "WC" && qType !== "QZ") {
+          errors.push(`Row ${rowNum}: Invalid Question Type (Must be exactly "OP", "WC", or "QZ")`);
           continue;
         }
 
-        const type = qType === "OP" ? "multiple_choice" : "word_cloud";
+        const type = (qType === "OP" || qType === "QZ") ? "multiple_choice" : "word_cloud";
         const options: string[] = [];
 
         if (type === "multiple_choice") {
@@ -664,7 +767,24 @@ export default function HostConsolePage() {
             }
           }
           if (options.length < 2) {
-            errors.push(`Row ${rowNum}: OP (Multiple Choice) requires at least 2 options (Option1 and Option2)`);
+            errors.push(`Row ${rowNum}: OP/QZ (Multiple Choice) requires at least 2 options (Option1 and Option2)`);
+          }
+        }
+
+        let correctOptionVal: number | null = null;
+        if (qType === "QZ") {
+          const ansStr = row[11]?.trim(); // index 11 is the 12th column "Answer"
+          if (!ansStr || ansStr === "") {
+            errors.push(`Row ${rowNum}: QZ (Quiz Question) requires a valid "Answer" value (1 to 8) in the 12th column`);
+          } else {
+            const ansVal = parseInt(ansStr, 10);
+            if (isNaN(ansVal) || ansVal < 1 || ansVal > 8) {
+              errors.push(`Row ${rowNum}: "Answer" must be a valid integer between 1 and 8`);
+            } else if (ansVal > options.length) {
+              errors.push(`Row ${rowNum}: "Answer" (${ansVal}) exceeds the number of options entered (${options.length})`);
+            } else {
+              correctOptionVal = ansVal;
+            }
           }
         }
 
@@ -672,6 +792,7 @@ export default function HostConsolePage() {
           type,
           promptText,
           options,
+          correct_option: correctOptionVal,
         });
       }
 
@@ -1021,10 +1142,35 @@ export default function HostConsolePage() {
               {/* Options Panel - renders below/alongside prompt when MC is selected */}
               {newType === "multiple_choice" && (
                 <div className="rounded-xl border border-white/5 bg-slate-950/20 p-4 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                      Options (2 - 6 options)
-                    </label>
+                  <div className="flex justify-between items-center flex-wrap gap-3">
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        Options (2 - 6 options)
+                      </label>
+                      
+                      {/* Right Answer Selector for Quiz Mode */}
+                      {session?.auth_mode === "quiz_gmail" && (
+                        <div className="flex items-center gap-2">
+                          <label htmlFor="correct-option-select" className="text-xs font-bold text-cyan-400 uppercase tracking-wider whitespace-nowrap">
+                            Right Answer:
+                          </label>
+                          <select
+                            id="correct-option-select"
+                            value={correctOption || ""}
+                            onChange={(e) => setCorrectOption(parseInt(e.target.value) || null)}
+                            className="h-8 px-2 rounded bg-slate-950 border border-white/10 text-white text-xs font-semibold focus:border-cyan-400 focus:outline-none"
+                            required
+                          >
+                            <option value="">-- Select Right Option --</option>
+                            {mcOptions.map((_, idx) => (
+                              <option key={idx} value={idx + 1}>
+                                Option {idx + 1}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
                     <Button
                       type="button"
                       variant="ghost"
@@ -1480,6 +1626,115 @@ export default function HostConsolePage() {
           </div>
 
         </div>
+
+        {session?.auth_mode === "quiz_gmail" && (
+          <section className="mt-8 rounded-2xl border border-white/10 bg-slate-900/60 p-6 shadow-2xl backdrop-blur-2xl relative overflow-hidden">
+            <div className="absolute -inset-px rounded-2xl bg-gradient-to-tr from-cyan-500/5 to-violet-500/5 opacity-20 pointer-events-none" />
+            
+            <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-white/5 pb-4 relative z-10">
+              <div>
+                <h3 className="text-xl font-black text-white flex items-center gap-2">
+                  <Trophy className="size-5 text-amber-400" />
+                  Live PulseRoom Leaderboard
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Real-time participant rankings and score standings.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void reloadLeaderboard(session.id)}
+                className="h-9 px-4 border border-white/5 bg-slate-950/40 hover:bg-slate-950 text-white font-bold flex items-center gap-2"
+              >
+                <RefreshCw className="size-3.5 text-cyan-400" />
+                Refresh Scores
+              </Button>
+            </div>
+
+            <div className="relative z-10 overflow-x-auto">
+              {leaderboard.length === 0 ? (
+                <div className="py-12 text-center">
+                  <UsersRound className="size-12 text-slate-700 mx-auto mb-3 animate-pulse" />
+                  <p className="text-sm text-slate-500 font-medium">No participants registered yet.</p>
+                  <p className="text-xs text-slate-600 mt-1">Standings will appear once players sign in and join the lobby.</p>
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      <th className="py-3 px-4">Rank</th>
+                      <th className="py-3 px-4">Player Name</th>
+                      <th className="py-3 px-4">Email</th>
+                      <th className="py-3 px-4 text-right">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <AnimatePresence>
+                      {leaderboard.map((player, idx) => {
+                        const rank = idx + 1;
+                        let rankStyle = "text-slate-400 font-bold";
+                        let rowBg = "hover:bg-white/[0.02]";
+                        let rankBadge = null;
+
+                        if (rank === 1) {
+                          rankStyle = "text-amber-400 font-extrabold";
+                          rowBg = "bg-amber-400/5 hover:bg-amber-400/10 border-l-4 border-l-amber-400";
+                          rankBadge = <Trophy className="size-4 text-amber-400 shrink-0" />;
+                        } else if (rank === 2) {
+                          rankStyle = "text-slate-300 font-extrabold";
+                          rowBg = "bg-slate-300/5 hover:bg-slate-300/10 border-l-4 border-l-slate-300";
+                          rankBadge = <Medal className="size-4 text-slate-300 shrink-0" />;
+                        } else if (rank === 3) {
+                          rankStyle = "text-amber-600 font-extrabold";
+                          rowBg = "bg-amber-600/5 hover:bg-amber-600/10 border-l-4 border-l-amber-600";
+                          rankBadge = <Medal className="size-4 text-amber-600 shrink-0" />;
+                        }
+
+                        return (
+                          <motion.tr
+                            key={player.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2, delay: idx * 0.05 }}
+                            className={`border-b border-white/5 transition-colors ${rowBg}`}
+                          >
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-2">
+                                {rankBadge}
+                                <span className={rankStyle}>#{rank}</span>
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4 font-bold text-slate-200">
+                              {player.name}
+                            </td>
+                            <td className="py-3.5 px-4 text-slate-400 font-medium text-xs font-mono">
+                              {player.email}
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-black text-white text-sm">
+                              <span className={`inline-block px-3 py-1 rounded-full text-xs font-extrabold tracking-wide ${
+                                rank === 1
+                                  ? "bg-amber-400/10 text-amber-400 border border-amber-400/20"
+                                  : rank === 2
+                                  ? "bg-slate-300/10 text-slate-300 border border-slate-300/20"
+                                  : rank === 3
+                                  ? "bg-amber-600/10 text-amber-600 border border-amber-600/20"
+                                  : "bg-slate-950 text-slate-400 border border-white/5"
+                              }`}>
+                                {player.score} pts
+                              </span>
+                            </td>
+                          </motion.tr>
+                        );
+                      })}
+                    </AnimatePresence>
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </section>
+        )}
       </div>
     </AppShell>
   );

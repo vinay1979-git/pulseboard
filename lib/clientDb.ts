@@ -30,8 +30,14 @@ export async function getSessionByCode(code: string): Promise<Session | null> {
   return apiCall("getSessionByCode", { code });
 }
 
-export async function createSession(userId: string, title: string): Promise<Session> {
-  return apiCall("createSession", { userId, title });
+export async function createSession(
+  userId: string,
+  title: string,
+  authMode?: string,
+  autoLaunch?: boolean,
+  timerSeconds?: number
+): Promise<Session> {
+  return apiCall("createSession", { userId, title, authMode, autoLaunch, timerSeconds });
 }
 
 export async function updateSessionStatus(sessionId: string, status: SessionStatus): Promise<void> {
@@ -50,9 +56,10 @@ export async function createQuestion(
   sessionId: string,
   type: QuestionType,
   promptText: string,
-  options: string[]
+  options: string[],
+  correctOption?: number | null
 ): Promise<Question> {
-  return apiCall("createQuestion", { sessionId, type, promptText, options });
+  return apiCall("createQuestion", { sessionId, type, promptText, options, correctOption });
 }
 
 export async function deleteQuestion(questionId: string): Promise<void> {
@@ -70,9 +77,10 @@ export async function getResponses(questionId: string): Promise<Response[]> {
 export async function submitResponse(
   questionId: string,
   participantId: string,
-  value: string
+  value: string,
+  pulseParticipantId?: string | null
 ): Promise<Response> {
-  return apiCall("submitResponse", { questionId, participantId, value });
+  return apiCall("submitResponse", { questionId, participantId, value, pulseParticipantId });
 }
 
 export async function resetResponses(questionId: string): Promise<void> {
@@ -117,4 +125,16 @@ export async function manuallyAddUser(email: string): Promise<UserProfile> {
 
 export async function cleanupTestData(userId: string): Promise<void> {
   return apiCall("cleanupTestData", { userId });
+}
+
+export async function registerParticipant(sessionId: string, name: string, email: string): Promise<any> {
+  return apiCall("registerParticipant", { sessionId, name, email });
+}
+
+export async function getParticipants(sessionId: string): Promise<any[]> {
+  return apiCall("getParticipants", { sessionId });
+}
+
+export async function calculateScores(questionId: string, correctOption: number): Promise<void> {
+  return apiCall("calculateScores", { questionId, correctOption });
 }

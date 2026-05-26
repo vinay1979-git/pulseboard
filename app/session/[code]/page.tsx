@@ -34,14 +34,23 @@ export default function SessionAudiencePage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const participantId = useMemo(() => getOrCreateParticipantId(code), [code]);
+  const participantId = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const key = `pulse-participant-${code}`;
+    const stored = window.localStorage.getItem(key);
+    if (stored) return stored;
+    return getOrCreateParticipantId(code);
+  }, [code]);
 
   const [selectedOption, setSelectedOption] = useState<string>("");
   const [wordValue, setWordValue] = useState<string>("");
   const [hasVoted, setHasVoted] = useState<boolean>(false);
   const [sessionStatus, setSessionStatus] = useState<"active" | "inactive">("active");
+  const [timerSecondsLeft, setTimerSecondsLeft] = useState<number | null>(null);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const currentQuestion = liveBatch[currentQuestionIndex] || null;
+  const isInputLocked = hasVoted || (timerSecondsLeft !== null && timerSecondsLeft <= 0);
 
   const loadData = async () => {
     try {
@@ -51,6 +60,18 @@ export default function SessionAudiencePage() {
         setLoading(false);
         return;
       }
+
+      // Auth Guard Redirect for Gmail Login Modes
+      if (activeSession.auth_mode === "gmail" || activeSession.auth_mode === "quiz_gmail") {
+        if (typeof window !== "undefined") {
+          const storedParticipantId = window.localStorage.getItem(`pulse-participant-${code}`);
+          if (!storedParticipantId) {
+            router.push(`/session/${code}/login`);
+            return;
+          }
+        }
+      }
+
       setSession(activeSession);
       setSessionStatus(activeSession.status);
 
@@ -112,14 +133,41 @@ export default function SessionAudiencePage() {
     const subscription = subscribeToSession(code, (event) => {
       console.log("Audience received realtime event:", event);
       if (event.type === "question_live") {
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+          timerIntervalRef.current = null;
+        }
+        setTimerSecondsLeft(null);
         setHasVoted(false);
         setSelectedOption("");
         setWordValue("");
         void loadData();
+      } else if (event.type === "questions_timer_start") {
+        const { duration } = event.payload;
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+        }
+        setTimerSecondsLeft(duration);
+        let timeLeft = duration;
+        timerIntervalRef.current = setInterval(() => {
+          timeLeft -= 1;
+          setTimerSecondsLeft(timeLeft);
+          if (timeLeft <= 0) {
+            if (timerIntervalRef.current) {
+              clearInterval(timerIntervalRef.current);
+              timerIntervalRef.current = null;
+            }
+          }
+        }, 1000);
       } else if (event.type === "session_status") {
         setSessionStatus(event.payload.status);
         if (event.payload.status === "inactive") {
           setLiveBatch([]);
+          if (timerIntervalRef.current) {
+            clearInterval(timerIntervalRef.current);
+            timerIntervalRef.current = null;
+          }
+          setTimerSecondsLeft(null);
         } else {
           setHasVoted(false);
           setSelectedOption("");
@@ -139,6 +187,9 @@ export default function SessionAudiencePage() {
 
     return () => {
       subscription.unsubscribe();
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
     };
   }, [code]);
 
@@ -152,7 +203,14 @@ export default function SessionAudiencePage() {
     setSubmitting(true);
 
     try {
-      const response = await clientDb.submitResponse(currentQuestion.id, participantId, answerValue);
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      setTimerSecondsLeft(null);
+
+      const storedParticipant = typeof window !== "undefined" ? window.localStorage.getItem(`pulse-participant-${code}`) : null;
+      const response = await clientDb.submitResponse(currentQuestion.id, participantId, answerValue, storedParticipant);
 
       await broadcastSessionEvent(code, {
         type: "response_submitted",
@@ -316,6 +374,23 @@ export default function SessionAudiencePage() {
                   </div>
                 )}
               </div>
+
+              {/* Ticking Timer Countdown Banner */}
+              {timerSecondsLeft !== null && (
+                <div className={`mb-4 rounded-xl border p-4 text-center font-bold relative overflow-hidden transition-all duration-300 ${
+                  timerSecondsLeft <= 5
+                    ? "bg-rose-500/10 border-rose-500/30 text-rose-400 animate-pulse"
+                    : "bg-cyan-500/5 border-cyan-500/20 text-cyan-400"
+                }`}>
+                  <div className="absolute -inset-px rounded-xl bg-gradient-to-tr from-white/[0.02] to-transparent pointer-events-none" />
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest block opacity-70">
+                    {timerSecondsLeft === 0 ? "Time is Up!" : "Time Remaining"}
+                  </span>
+                  <span className="text-3xl font-black mt-1 block">
+                    {timerSecondsLeft}s
+                  </span>
+                </div>
+              )}
               
               <h1 className="text-2xl sm:text-3.5xl font-black leading-tight text-white mb-6">
                 {currentQuestion.prompt_text}
@@ -330,10 +405,13 @@ export default function SessionAudiencePage() {
                         key={idx}
                         type="button"
                         onClick={() => setSelectedOption(String(idx))}
-                        className={`w-full text-left p-5 rounded-xl border text-base font-bold transition-all duration-200 flex justify-between items-center cursor-pointer min-h-[52px] ${
-                          selectedOption === String(idx)
-                            ? "border-cyan-400 bg-cyan-400/10 text-white shadow-lg shadow-cyan-400/5"
-                            : "border-white/5 bg-slate-950/30 text-slate-300 hover:bg-slate-950/50"
+                        disabled={isInputLocked || submitting}
+                        className={`w-full text-left p-5 rounded-xl border text-base font-bold transition-all duration-200 flex justify-between items-center min-h-[52px] ${
+                          isInputLocked
+                            ? "opacity-50 cursor-not-allowed border-white/5 bg-slate-950/20 text-slate-500"
+                            : selectedOption === String(idx)
+                            ? "border-cyan-400 bg-cyan-400/10 text-white shadow-lg shadow-cyan-400/5 cursor-pointer"
+                            : "border-white/5 bg-slate-950/30 text-slate-300 hover:bg-slate-950/50 cursor-pointer"
                         }`}
                       >
                         <span>{option}</span>
@@ -346,7 +424,6 @@ export default function SessionAudiencePage() {
                     ))}
                   </div>
                 ) : (
-                  /* Word Cloud text entry (Strictly 54px text heights) with label compliance */
                   <div className="space-y-2">
                     <label htmlFor="word-entry" className="mb-1.5 block text-xs font-bold text-slate-500 uppercase tracking-wider">
                       Your response word
@@ -355,10 +432,11 @@ export default function SessionAudiencePage() {
                       id="word-entry"
                       name="word-entry"
                       required
-                      placeholder="Type your word here (e.g. Dynamic, Scalable...)"
+                      placeholder={timerSecondsLeft !== null && timerSecondsLeft <= 0 ? "Time's up!" : "Type your word here (e.g. Dynamic, Scalable...)"}
                       value={wordValue}
                       onChange={(e) => setWordValue(e.target.value.slice(0, 25))}
-                      className="text-lg py-7 bg-slate-950/50 border-white/10 text-white font-semibold focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20"
+                      disabled={isInputLocked || submitting}
+                      className="text-lg py-7 bg-slate-950/50 border-white/10 text-white font-semibold focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                       autoFocus
                     />
                     <p className="text-[10px] font-bold text-slate-500 text-right uppercase tracking-wider">
@@ -369,8 +447,8 @@ export default function SessionAudiencePage() {
 
                 <Button
                   type="submit"
-                  className="w-full h-12 text-sm font-extrabold bg-cyan-500 hover:bg-cyan-600 text-slate-950 flex items-center justify-center gap-2 group shadow-lg shadow-cyan-500/10 cursor-pointer"
-                  disabled={submitting || (currentQuestion.type === "multiple_choice" ? selectedOption === "" : wordValue.trim() === "")}
+                  className="w-full h-12 text-sm font-extrabold bg-cyan-500 hover:bg-cyan-600 text-slate-950 flex items-center justify-center gap-2 group shadow-lg shadow-cyan-500/10 cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
+                  disabled={submitting || isInputLocked || (currentQuestion.type === "multiple_choice" ? selectedOption === "" : wordValue.trim() === "")}
                 >
                   {submitting ? (
                     <>

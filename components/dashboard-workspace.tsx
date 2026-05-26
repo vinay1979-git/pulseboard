@@ -40,6 +40,11 @@ export function DashboardWorkspace({
   const [loading, setLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newSessionName, setNewSessionName] = useState("");
+  
+  // Quiz configurations
+  const [authMode, setAuthMode] = useState<"anonymous" | "gmail" | "quiz_gmail">("anonymous");
+  const [autoLaunch, setAutoLaunch] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(30);
 
   const visibleSessions = useMemo(() => {
     return sessions.filter((session) =>
@@ -56,8 +61,11 @@ export function DashboardWorkspace({
     if (!trimmedName || trimmedName.toLowerCase() === "untitled session" || trimmedName.toLowerCase() === "untitled pulseroom" || loading) return;
     setLoading(true);
     try {
-      const created = await clientDb.createSession(userId, trimmedName);
+      const created = await clientDb.createSession(userId, trimmedName, authMode, autoLaunch, autoLaunch ? timerSeconds : 0);
       setNewSessionName("");
+      setAuthMode("anonymous");
+      setAutoLaunch(false);
+      setTimerSeconds(30);
       setShowCreateModal(false);
       router.push(`/session/${created.code}/host`);
     } catch (err) {
@@ -341,25 +349,88 @@ export function DashboardWorkspace({
                 }}
                 className="mt-5 space-y-4 relative z-10"
               >
-                <div>
-                  <label htmlFor="session-name-input" className="mb-1.5 block text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    PulseRoom Name
-                  </label>
-                  <Input
-                    id="session-name-input"
-                    name="session-name-input"
-                    required
-                    autoFocus
-                    placeholder="e.g. Q3 Roadmap Brainstorm"
-                    value={newSessionName}
-                    onChange={(e) => setNewSessionName(e.target.value)}
-                    className="h-11 bg-slate-950/50 border-white/10 text-white placeholder-slate-500 focus:border-cyan-400 text-sm font-medium"
-                  />
-                  {(newSessionName.trim().toLowerCase() === "untitled session" || newSessionName.trim().toLowerCase() === "untitled pulseroom") && (
-                    <p className="mt-1.5 text-[10px] font-bold text-rose-400 uppercase tracking-wider">
-                      "Untitled PulseRoom" is not a valid PulseRoom name
-                    </p>
-                  )}
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="session-name-input" className="mb-1.5 block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      PulseRoom Name
+                    </label>
+                    <Input
+                      id="session-name-input"
+                      name="session-name-input"
+                      required
+                      autoFocus
+                      placeholder="e.g. Q3 Roadmap Brainstorm"
+                      value={newSessionName}
+                      onChange={(e) => setNewSessionName(e.target.value)}
+                      className="h-11 bg-slate-950/50 border-white/10 text-white placeholder-slate-500 focus:border-cyan-400 text-sm font-medium"
+                    />
+                    {(newSessionName.trim().toLowerCase() === "untitled session" || newSessionName.trim().toLowerCase() === "untitled pulseroom") && (
+                      <p className="mt-1.5 text-[10px] font-bold text-rose-400 uppercase tracking-wider">
+                        "Untitled PulseRoom" is not a valid PulseRoom name
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label htmlFor="session-auth-mode" className="mb-1.5 block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      Access Authentication Mode
+                    </label>
+                    <select
+                      id="session-auth-mode"
+                      name="session-auth-mode"
+                      value={authMode}
+                      onChange={(e) => setAuthMode(e.target.value as any)}
+                      className="w-full h-11 px-3 rounded-lg bg-slate-950/50 border border-white/10 text-white focus:border-cyan-400 text-sm font-medium focus:outline-none"
+                    >
+                      <option value="anonymous" className="bg-slate-900 text-white">Anonymous Guest Mode</option>
+                      <option value="gmail" className="bg-slate-900 text-white">Gmail Login Mode</option>
+                      <option value="quiz_gmail" className="bg-slate-900 text-white">Quiz with Gmail Login Mode</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-white/5 pt-4">
+                    <div>
+                      <label htmlFor="session-auto-launch" className="text-xs font-bold text-slate-200 uppercase tracking-wider block">
+                        Auto-Launch Timer
+                      </label>
+                      <span className="text-[10px] text-slate-400">
+                        Automatically start a countdown timer when questions go live
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      id="session-auto-launch"
+                      name="session-auto-launch"
+                      checked={autoLaunch}
+                      onChange={(e) => setAutoLaunch(e.target.checked)}
+                      className="size-5 rounded border-white/10 bg-slate-950 accent-cyan-400 cursor-pointer"
+                    />
+                  </div>
+
+                  <AnimatePresence>
+                    {autoLaunch && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="space-y-1.5 border-t border-white/5 pt-4 overflow-hidden"
+                      >
+                        <label htmlFor="session-timer-seconds" className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                          Timer Duration (Seconds)
+                        </label>
+                        <Input
+                          type="number"
+                          id="session-timer-seconds"
+                          name="session-timer-seconds"
+                          min={5}
+                          max={300}
+                          value={timerSeconds}
+                          onChange={(e) => setTimerSeconds(parseInt(e.target.value) || 30)}
+                          className="h-11 bg-slate-950/50 border-white/10 text-white placeholder-slate-500 focus:border-cyan-400 text-sm font-medium"
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
                 <div className="flex justify-end gap-2.5 pt-2">

@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
             { status: 400 }
           );
         }
-        return NextResponse.json(await db.createSession(args.userId, title));
+        return NextResponse.json(await db.createSession(args.userId, title, args.authMode, args.autoLaunch, args.timerSeconds));
       }
       case "updateSessionStatus":
         await db.updateSessionStatus(args.sessionId, args.status as SessionStatus);
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(await db.getQuestions(args.sessionId));
       case "createQuestion":
         return NextResponse.json(
-          await db.createQuestion(args.sessionId, args.type as QuestionType, args.promptText, args.options)
+          await db.createQuestion(args.sessionId, args.type as QuestionType, args.promptText, args.options, args.correctOption)
         );
       case "deleteQuestion":
         await db.deleteQuestion(args.questionId);

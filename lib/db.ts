@@ -388,7 +388,15 @@ export async function touchSession(sessionId: string): Promise<void> {
   }
 }
 
-export async function createSession(userId: string, title: string): Promise<Session> {
+import { AuthMode } from "./schema";
+
+export async function createSession(
+  userId: string,
+  title: string,
+  authMode: AuthMode = "anonymous",
+  autoLaunch: boolean = false,
+  timerSeconds: number = 0
+): Promise<Session> {
   const sanitizedTitle = sanitizeText(title).trim();
   if (!sanitizedTitle || sanitizedTitle.toLowerCase() === "untitled session") {
     throw new Error("Invalid session title. Title cannot be empty or 'Untitled Session'.");
@@ -413,6 +421,9 @@ export async function createSession(userId: string, title: string): Promise<Sess
     last_live_at: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    auth_mode: authMode,
+    auto_launch: autoLaunch,
+    timer_seconds: timerSeconds,
   };
 
   if (isSupabase) {
@@ -555,7 +566,8 @@ export async function createQuestion(
   sessionId: string,
   type: QuestionType,
   promptText: string,
-  options: string[]
+  options: string[],
+  correctOption?: number | null
 ): Promise<Question> {
   const sanitizedPrompt = sanitizeText(promptText);
   const sanitizedOptions = options.map(o => sanitizeText(o)).filter(o => o !== "");
@@ -596,6 +608,7 @@ export async function createQuestion(
     is_live: false,
     created_at: new Date().toISOString(),
     order_index: nextOrderIndex,
+    correct_option: correctOption || null,
   };
 
   if (isSupabase) {
@@ -1142,7 +1155,7 @@ export async function updateUserProfileAvatar(userId: string, avatarUrl: string)
 }
 
 export async function bulkImportQuestions(sessionId: string, questionsList: any[]): Promise<void> {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isMockId(sessionId)) {
     try {
       const supabase = await createServerClient();
       
@@ -1164,6 +1177,7 @@ export async function bulkImportQuestions(sessionId: string, questionsList: any[
         is_live: false,
         created_at: new Date().toISOString(),
         order_index: startIdx + idx,
+        correct_option: q.correct_option || null,
       }));
       
       const { error } = await supabase
@@ -1190,6 +1204,7 @@ export async function bulkImportQuestions(sessionId: string, questionsList: any[
         is_live: false,
         created_at: new Date().toISOString(),
         order_index: startIdx + idx,
+        correct_option: q.correct_option || null,
       });
     });
   }

@@ -1,7 +1,14 @@
 import { pusherClient } from "./pusherClient";
 
 export interface RealtimeEvent {
-  type: "question_live" | "response_submitted" | "session_status" | "responses_reset";
+  type:
+    | "question_live"
+    | "response_submitted"
+    | "session_status"
+    | "responses_reset"
+    | "questions_timer_start"
+    | "leaderboard_updated"
+    | "leaderboard-updated";
   payload: any;
 }
 
