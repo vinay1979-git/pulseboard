@@ -45,12 +45,13 @@ export async function GET(request: NextRequest) {
           data: { user },
         } = await supabase.auth.getUser();
 
-        if (user && user.email) {
+        if (user) {
+          const googleAvatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture;
           // Sync and retrieve User Profile to handle normal flow
-          await syncUserProfile(user.id, user.email);
+          await syncUserProfile(user.id, user.email || "", googleAvatarUrl);
 
           // Critical RBAC Step: Explicitly assert Vinay's super-admin status
-          if (user.email.toLowerCase() === "vinay1979@gmail.com") {
+          if (user.email && user.email.toLowerCase() === "vinay1979@gmail.com") {
             try {
               const { data: existing } = await supabase
                 .from("profiles")

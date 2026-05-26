@@ -12,8 +12,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(await db.getSessions(args.userId));
       case "getSessionByCode":
         return NextResponse.json(await db.getSessionByCode(args.code));
-      case "createSession":
-        return NextResponse.json(await db.createSession(args.userId, args.title));
+      case "createSession": {
+        const title = args.title?.trim();
+        if (!title || title === "" || title.toLowerCase() === "untitled session") {
+          return NextResponse.json(
+            { error: "Invalid session title. Title cannot be empty or 'Untitled Session'." },
+            { status: 400 }
+          );
+        }
+        return NextResponse.json(await db.createSession(args.userId, title));
+      }
       case "updateSessionStatus":
         await db.updateSessionStatus(args.sessionId, args.status as SessionStatus);
         return NextResponse.json({ success: true });
@@ -49,7 +57,16 @@ export async function POST(req: NextRequest) {
         await db.resetResponses(args.questionId);
         return NextResponse.json({ success: true });
       case "syncUserProfile":
-        return NextResponse.json(await db.syncUserProfile(args.userId, args.email));
+        return NextResponse.json(await db.syncUserProfile(args.userId, args.email, args.avatarUrl));
+      case "updateUserProfileAvatar":
+        await db.updateUserProfileAvatar(args.userId, args.avatarUrl);
+        return NextResponse.json({ success: true });
+      case "bulkImportQuestions":
+        await db.bulkImportQuestions(args.sessionId, args.questionsList);
+        return NextResponse.json({ success: true });
+      case "cleanupTestData":
+        await db.cleanupTestData(args.userId);
+        return NextResponse.json({ success: true });
       case "getAllUsers":
         return NextResponse.json(await db.getAllUsers());
       case "approveUser":

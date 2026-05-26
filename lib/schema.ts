@@ -7,8 +7,17 @@ export interface Session {
   title: string; // Friendly name for the presentation session
   status: SessionStatus;
   created_by: string;
+  updated_by?: string | null;
+  last_live_at?: string | null;
   created_at: string;
   updated_at: string;
+  // Creator & modifier display metadata
+  creator_email?: string;
+  creator_name?: string;
+  updater_email?: string;
+  updater_name?: string;
+  creator?: { full_name: string; email: string } | null;
+  updater?: { full_name: string; email: string } | null;
 }
 
 export interface Question {
@@ -19,6 +28,7 @@ export interface Question {
   options: string[]; // Options for multiple choice (empty for word cloud)
   is_live: boolean;
   created_at: string;
+  updated_at?: string | null;
   order_index: number;
 }
 
@@ -35,6 +45,7 @@ export interface UserProfile {
   email: string;
   role: "super-admin" | "power-user";
   approval_status: "pending" | "approved";
+  avatar_url?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -20,6 +20,10 @@ import {
   Share2,
   ArrowUp,
   ArrowDown,
+  Upload,
+  Download,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   BarChart,
@@ -60,10 +64,38 @@ export default function HostConsolePage() {
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
   const [editTitle, setEditTitle] = useState("");
   const [questionResponseCounts, setQuestionResponseCounts] = useState<Record<string, number>>({});
+  
+  // CSV Bulk Importer & Pagination states
+  const [csvErrors, setCsvErrors] = useState<string[]>([]);
+  const [showCsvImporter, setShowCsvImporter] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const csvFileInputRef = useRef<HTMLInputElement>(null);
+
+  const questionsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(questions.length / questionsPerPage));
+  
+  const paginatedQuestions = useMemo(() => {
+    const startIdx = (currentPage - 1) * questionsPerPage;
+    return questions.slice(startIdx, startIdx + questionsPerPage);
+  }, [questions, currentPage]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [questions.length, totalPages, currentPage]);
 
   const [loading, setLoading] = useState(true);
   const [submittingQuestion, setSubmittingQuestion] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
+  const [expandedQuestionIds, setExpandedQuestionIds] = useState<string[]>([]);
+
+  const handleToggleExpandQuestion = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedQuestionIds((current) =>
+      current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
+    );
+  };
 
   const [newPrompt, setNewPrompt] = useState("");
   const [newType, setNewType] = useState<"multiple_choice" | "word_cloud">("multiple_choice");
@@ -134,6 +166,38 @@ export default function HostConsolePage() {
     }
   };
 
+  const handleLaunchAll = async () => {
+    if (!session || questions.length === 0) return;
+    try {
+      const allQuestionIds = questions.map((q) => q.id);
+      await clientDb.setQuestionsLive(session.id, allQuestionIds);
+      
+      setQuestions((current) =>
+        current.map((q) => ({ ...q, is_live: true }))
+      );
+
+      // Focus on the first question
+      const target = questions[0] || null;
+      setActiveQuestion(target);
+      setResponses([]);
+      setParticipantsCount(0);
+
+      // Reset selection checkbox array
+      setSelectedQuestionIds([]);
+
+      if (target) {
+        void reloadResponses(target.id);
+      }
+
+      setActionMessage("All questions launched live simultaneously!");
+      setTimeout(() => setActionMessage(""), 2000);
+    } catch (err) {
+      console.error("Failed to launch all questions:", err);
+      setActionMessage("Failed to launch all questions.");
+      setTimeout(() => setActionMessage(""), 2000);
+    }
+  };
+
   const handleSaveTitle = async () => {
     if (!session || !editTitle.trim()) return;
     try {
@@ -193,11 +257,16 @@ export default function HostConsolePage() {
 
   const loadHostData = async () => {
     try {
+      let activeRole = "power-user";
+      let activeUserId = "demo-user-id";
+      
       // Direct client auth and approval check
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        activeUserId = user.id;
         const profile = await clientDb.syncUserProfile(user.id, user.email || "");
+        activeRole = profile.role;
         setUserRole(profile.role);
         if (profile.approval_status === "pending") {
           router.push("/awaiting-approval");
@@ -206,6 +275,7 @@ export default function HostConsolePage() {
       } else {
         // Safe check for local mock fallback testing
         const profile = await clientDb.syncUserProfile("demo-user-id", "vinay1979@gmail.com");
+        activeRole = profile.role;
         setUserRole(profile.role);
         if (profile.approval_status === "pending") {
           router.push("/awaiting-approval");
@@ -218,6 +288,15 @@ export default function HostConsolePage() {
         setLoading(false);
         return;
       }
+      
+      // Console Bypass Check
+      const isOwner = activeSession.created_by === activeUserId;
+      const isSuperAdmin = activeRole === "super-admin";
+      if (!isOwner && !isSuperAdmin) {
+        router.push("/dashboard");
+        return;
+      }
+      
       setSession(activeSession);
       setEditTitle(activeSession.title);
 
@@ -443,6 +522,185 @@ export default function HostConsolePage() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedQuestionIds.length === 0) return;
+    if (!confirm(`Delete ${selectedQuestionIds.length} selected question(s)? This will permanently remove their responses.`)) return;
+
+    try {
+      const deletePromises = selectedQuestionIds.map((id) => clientDb.deleteQuestion(id));
+      await Promise.all(deletePromises);
+
+      setQuestions((current) => current.filter((q) => !selectedQuestionIds.includes(q.id)));
+
+      // If active question was deleted, reset it
+      if (activeQuestion && selectedQuestionIds.includes(activeQuestion.id)) {
+        setActiveQuestion(null);
+        setResponses([]);
+        setParticipantsCount(0);
+        await broadcastSessionEvent(code, {
+          type: "question_live",
+          payload: { questionId: "none" },
+        });
+      }
+
+      setSelectedQuestionIds([]);
+      setActionMessage("Selected questions deleted successfully!");
+      setTimeout(() => setActionMessage(""), 2000);
+    } catch (err) {
+      console.error("Bulk delete failed:", err);
+      setActionMessage("Bulk delete failed.");
+      setTimeout(() => setActionMessage(""), 2000);
+    }
+  };
+
+  const handleDownloadSampleCSV = () => {
+    const headers = "QNo, Question, Question Type, Option1, Option2, Option3, Option4, Option5, Option6, Option7, Option8\n";
+    const sample1 = "1, Which UI frame do you prefer?, OP, Clean Cards, Glassmorphism Grid, Minimalist Row,,,,,,\n";
+    const sample2 = "2, Describe PulseBoard in one word, WC,,,,,,,,,,\n";
+    const csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent(headers + sample1 + sample2);
+    
+    const link = document.createElement("a");
+    link.setAttribute("href", csvContent);
+    link.setAttribute("download", "pulseboard_sample_questions.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleCSVUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      const text = e.target?.result as string;
+      if (!text) return;
+
+      const parseCSV = (csvText: string) => {
+        const lines = [];
+        let row = [""];
+        let insideQuote = false;
+        for (let i = 0; i < csvText.length; i++) {
+          const char = csvText[i];
+          const nextChar = csvText[i + 1];
+          if (char === '"') {
+            if (insideQuote && nextChar === '"') {
+              row[row.length - 1] += '"';
+              i++;
+            } else {
+              insideQuote = !insideQuote;
+            }
+          } else if (char === ',' && !insideQuote) {
+            row.push("");
+          } else if ((char === '\r' || char === '\n') && !insideQuote) {
+            if (char === '\r' && nextChar === '\n') i++;
+            lines.push(row);
+            row = [""];
+          } else {
+            row[row.length - 1] += char;
+          }
+        }
+        if (row.length > 1 || row[0] !== "") {
+          lines.push(row);
+        }
+        return lines;
+      };
+
+      const rows = parseCSV(text);
+      if (rows.length === 0) {
+        setCsvErrors(["The uploaded CSV file is empty."]);
+        return;
+      }
+
+      const dataRows = rows.slice(1).filter(r => r.length > 1 || (r[0] && r[0].trim() !== ""));
+      if (dataRows.length === 0) {
+        setCsvErrors(["No question rows found in the CSV file."]);
+        return;
+      }
+
+      const errors: string[] = [];
+      const parsedQuestions: any[] = [];
+      let expectedQNo = 1;
+
+      for (let i = 0; i < dataRows.length; i++) {
+        const row = dataRows[i];
+        const rowNum = i + 2;
+
+        const qNoStr = row[0]?.trim();
+        const promptText = row[1]?.trim();
+        const qType = row[2]?.trim();
+
+        if (!qNoStr || !promptText || !qType) {
+          errors.push(`Row ${rowNum}: Missing mandatory fields (QNo, Question, or Question Type)`);
+          continue;
+        }
+
+        const qNo = parseInt(qNoStr, 10);
+        if (isNaN(qNo)) {
+          errors.push(`Row ${rowNum}: QNo must be a valid number`);
+          continue;
+        }
+
+        if (qNo !== expectedQNo) {
+          errors.push(`Row ${rowNum}: QNo must be sequential (Expected: ${expectedQNo}, Actual: ${qNo})`);
+        }
+        expectedQNo++;
+
+        if (qType !== "OP" && qType !== "WC") {
+          errors.push(`Row ${rowNum}: Invalid Question Type (Must be exactly "OP" or "WC")`);
+          continue;
+        }
+
+        const type = qType === "OP" ? "multiple_choice" : "word_cloud";
+        const options: string[] = [];
+
+        if (type === "multiple_choice") {
+          for (let j = 3; j <= 10; j++) {
+            const opt = row[j]?.trim();
+            if (opt && opt !== "") {
+              options.push(opt);
+            }
+          }
+          if (options.length < 2) {
+            errors.push(`Row ${rowNum}: OP (Multiple Choice) requires at least 2 options (Option1 and Option2)`);
+          }
+        }
+
+        parsedQuestions.push({
+          type,
+          promptText,
+          options,
+        });
+      }
+
+      if (errors.length > 0) {
+        setCsvErrors(errors);
+        if (event.target) event.target.value = "";
+        return;
+      }
+
+      try {
+        if (session) {
+          await clientDb.bulkImportQuestions(session.id, parsedQuestions);
+          setActionMessage(`Successfully imported ${parsedQuestions.length} questions!`);
+          setCsvErrors([]);
+          setShowCsvImporter(false);
+          void loadHostData();
+          setTimeout(() => setActionMessage(""), 2000);
+        }
+      } catch (err: any) {
+        console.error("Bulk import failed:", err);
+        setCsvErrors([err.message || "Bulk database insertion failed."]);
+      }
+
+      if (event.target) event.target.value = "";
+    };
+
+    reader.readAsText(file);
+  };
+
   const chartData = useMemo(() => {
     if (!activeQuestion || activeQuestion.type !== "multiple_choice") return [];
     
@@ -556,7 +814,7 @@ export default function HostConsolePage() {
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-cyan-400/10 border border-cyan-400/20 text-cyan-400 shadow-md">
               <Radio className="size-5 animate-pulse" />
             </span>
-            <div>
+            <div className="flex-1 min-w-0">
               <input
                 type="text"
                 value={editTitle}
@@ -565,9 +823,31 @@ export default function HostConsolePage() {
                 className="text-2xl font-black text-white bg-transparent border-b border-transparent hover:border-white/20 focus:border-cyan-400 focus:outline-none w-full max-w-xl transition-all duration-200"
                 placeholder="Untitled Session"
               />
-              <p className="text-sm text-slate-400 flex items-center gap-2 mt-1">
-                Participants: <span className="font-extrabold text-slate-200 flex items-center gap-1.5"><UsersRound className="size-4 text-cyan-400" /> {participantsCount} online</span>
-              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-400">
+                <span className="flex items-center gap-1">
+                  Participants: <span className="font-extrabold text-slate-200 flex items-center gap-1"><UsersRound className="size-3.5 text-cyan-400" /> {participantsCount} online</span>
+                </span>
+                <span className="text-slate-700 hidden sm:inline">|</span>
+                <span>
+                  Created: <span className="font-semibold text-slate-300">{new Date(session.created_at).toLocaleString()}</span> by <span className="font-bold text-cyan-400">{session.creator?.full_name || session.creator_name || "Unknown"} ({session.creator?.email || session.creator_email || "Unknown"})</span>
+                </span>
+                {session.updater && (
+                  <>
+                    <span className="text-slate-700 hidden sm:inline">|</span>
+                    <span>
+                      Modified: <span className="font-semibold text-slate-300">{new Date(session.updated_at).toLocaleString()}</span> by <span className="font-bold text-cyan-400">{session.updater?.full_name || session.updater_name || "Unknown"} ({session.updater?.email || session.updater_email || "Unknown"})</span>
+                    </span>
+                  </>
+                )}
+                {session.last_live_at && (
+                  <>
+                    <span className="text-slate-700 hidden sm:inline">|</span>
+                    <span>
+                      Last Live: <span className="font-semibold text-slate-300">{new Date(session.last_live_at).toLocaleString()}</span>
+                    </span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
           
@@ -778,219 +1058,402 @@ export default function HostConsolePage() {
           {/* RIGHT: Questionnaire Manager & Creator */}
           <div className="grid gap-6">
             
-            {/* Create Question Stack Form */}
+            {/* Create Question Stack Form / CSV Bulk Importer */}
             <section className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 shadow-2xl backdrop-blur-2xl relative">
-              <h3 className="text-lg font-black border-b border-white/5 pb-3 flex items-center gap-2 text-white">
-                <Plus className="size-4 text-cyan-400" />
-                Add Question
-              </h3>
-              
-              <form onSubmit={handleAddQuestion} className="mt-4 space-y-4 pr-1">
-                <div>
-                  <label className="mb-1.5 block text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Question Type
-                  </label>
-                  <div className="grid grid-cols-2 gap-1 rounded-lg border border-white/5 bg-slate-950/45 p-1">
-                    {(["multiple_choice", "word_cloud"] as const).map((type) => (
-                      <button
-                        key={type}
-                        type="button"
-                        onClick={() => setNewType(type)}
-                        className={`h-8 rounded text-xs font-bold capitalize transition cursor-pointer ${
-                          newType === type
-                            ? "bg-white/10 text-white shadow-sm"
-                            : "text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        {type === "multiple_choice" ? "Multiple Choice" : "Word Cloud"}
-                      </button>
-                    ))}
-                  </div>
+              <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                <h3 className="text-lg font-black flex items-center gap-2 text-white">
+                  <Plus className="size-4 text-cyan-400" />
+                  Add Questions
+                </h3>
+                
+                {/* Tabs Selector */}
+                <div className="flex rounded-lg border border-white/5 bg-slate-950/45 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowCsvImporter(false)}
+                    className={`h-7 px-3 rounded text-[11px] font-bold transition cursor-pointer ${
+                      !showCsvImporter
+                        ? "bg-white/10 text-white shadow-sm"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Manual
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCsvImporter(true)}
+                    className={`h-7 px-3 rounded text-[11px] font-bold transition cursor-pointer ${
+                      showCsvImporter
+                        ? "bg-white/10 text-white shadow-sm"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    CSV Import
+                  </button>
                 </div>
+              </div>
 
-                <div>
-                  <label htmlFor="prompt" className="mb-1.5 block text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Question Prompt
-                  </label>
-                  <Input
-                    id="prompt"
-                    required
-                    placeholder="e.g. Rate your confidence"
-                    value={newPrompt}
-                    onChange={(e) => setNewPrompt(e.target.value)}
-                    className="text-sm h-11 bg-slate-950/40 border-white/5 text-white"
-                  />
-                </div>
-
-                {newType === "multiple_choice" && (
-                  <div className="space-y-2">
-                    <label className="block text-xs font-bold text-slate-500 flex justify-between items-center uppercase tracking-wider">
-                      <span>Options (2 - 6 options)</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="h-6 px-1.5 text-[10px] uppercase font-black text-cyan-400 hover:bg-cyan-400/10 cursor-pointer"
-                        onClick={addOptionInput}
-                        disabled={mcOptions.length >= 6}
-                      >
-                        + Add option
-                      </Button>
+              {!showCsvImporter ? (
+                <form onSubmit={handleAddQuestion} className="mt-4 space-y-4 pr-1">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      Question Type
                     </label>
-                    <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                      {mcOptions.map((opt, index) => (
-                        <div key={index} className="flex gap-1.5 items-center">
-                          <Input
-                            id={`option-${index}`}
-                            name={`option-${index}`}
-                            aria-label={`Option ${index + 1}`}
-                            required
-                            placeholder={`Option ${index + 1}`}
-                            value={opt}
-                            onChange={(e) => handleOptionChange(index, e.target.value)}
-                            className="h-9 text-xs bg-slate-950/40 border-white/5 text-white"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeOptionInput(index)}
-                            disabled={mcOptions.length <= 2}
-                            className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-30 cursor-pointer"
-                            title="Remove Option"
-                          >
-                            <X className="size-4" />
-                          </button>
-                        </div>
+                    <div className="grid grid-cols-2 gap-1 rounded-lg border border-white/5 bg-slate-950/45 p-1">
+                      {(["multiple_choice", "word_cloud"] as const).map((type) => (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => setNewType(type)}
+                          className={`h-8 rounded text-xs font-bold capitalize transition cursor-pointer ${
+                            newType === type
+                              ? "bg-white/10 text-white shadow-sm"
+                              : "text-slate-400 hover:text-slate-200"
+                          }`}
+                        >
+                          {type === "multiple_choice" ? "Multiple Choice" : "Word Cloud"}
+                        </button>
                       ))}
                     </div>
                   </div>
-                )}
 
-                <Button type="submit" className="w-full h-11 text-xs font-extrabold cursor-pointer" disabled={submittingQuestion}>
-                  Save to Session Stack
-                </Button>
-              </form>
+                  <div>
+                    <label htmlFor="prompt" className="mb-1.5 block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      Question Prompt
+                    </label>
+                    <Input
+                      id="prompt"
+                      required
+                      placeholder="e.g. Rate your confidence"
+                      value={newPrompt}
+                      onChange={(e) => setNewPrompt(e.target.value)}
+                      className="text-sm h-11 bg-slate-950/40 border-white/5 text-white"
+                    />
+                  </div>
+
+                  {newType === "multiple_choice" && (
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold text-slate-500 flex justify-between items-center uppercase tracking-wider">
+                        <span>Options (2 - 6 options)</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="h-6 px-1.5 text-[10px] uppercase font-black text-cyan-400 hover:bg-cyan-400/10 cursor-pointer"
+                          onClick={addOptionInput}
+                          disabled={mcOptions.length >= 6}
+                        >
+                          + Add option
+                        </Button>
+                      </label>
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                        {mcOptions.map((opt, index) => (
+                          <div key={index} className="flex gap-1.5 items-center">
+                            <Input
+                              id={`option-${index}`}
+                              name={`option-${index}`}
+                              aria-label={`Option ${index + 1}`}
+                              required
+                              placeholder={`Option ${index + 1}`}
+                              value={opt}
+                              onChange={(e) => handleOptionChange(index, e.target.value)}
+                              className="h-9 text-xs bg-slate-950/40 border-white/5 text-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeOptionInput(index)}
+                              disabled={mcOptions.length <= 2}
+                              className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-30 cursor-pointer"
+                              title="Remove Option"
+                            >
+                              <X className="size-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <Button type="submit" className="w-full h-11 text-xs font-extrabold cursor-pointer" disabled={submittingQuestion}>
+                    Save to Session Stack
+                  </Button>
+                </form>
+              ) : (
+                <div className="mt-4 space-y-4 pr-1">
+                  <div className="rounded-xl border border-dashed border-white/10 bg-slate-950/30 p-5 text-center flex flex-col items-center justify-center">
+                    <Upload className="size-8 text-cyan-400 animate-pulse mb-3" />
+                    <h4 className="text-sm font-extrabold text-white">Import questions via CSV</h4>
+                    <p className="text-xs text-slate-400 mt-1 max-w-[280px] mx-auto">
+                      Quickly upload multiple questions in bulk. Supported types: OP (Multiple Choice) & WC (Word Cloud).
+                    </p>
+                    
+                    <input
+                      type="file"
+                      ref={csvFileInputRef}
+                      onChange={handleCSVUpload}
+                      accept=".csv"
+                      className="hidden"
+                    />
+                    
+                    <div className="mt-4 flex flex-col sm:flex-row gap-2 w-full justify-center">
+                      <Button
+                        type="button"
+                        onClick={() => csvFileInputRef.current?.click()}
+                        className="h-10 text-xs font-extrabold bg-cyan-500 hover:bg-cyan-600 text-slate-950 cursor-pointer shadow-lg shadow-cyan-500/10"
+                      >
+                        Choose CSV File
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={handleDownloadSampleCSV}
+                        className="h-10 text-xs font-extrabold border border-white/5 bg-slate-950/60 hover:bg-slate-950 text-white flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Download className="size-3.5 text-cyan-400" />
+                        Download Template
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* All-or-nothing Visual Error Log Container */}
+                  {csvErrors.length > 0 && (
+                    <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 relative overflow-hidden">
+                      <div className="flex items-center justify-between border-b border-red-500/10 pb-2 mb-2">
+                        <span className="text-xs font-black text-red-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <X className="size-3.5" />
+                          Import Errors ({csvErrors.length})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setCsvErrors([])}
+                          className="text-[10px] font-bold text-slate-400 hover:text-slate-200 cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 text-[11px] font-mono text-red-300">
+                        {csvErrors.map((err, i) => (
+                          <div key={i} className="flex gap-1.5 items-start leading-relaxed">
+                            <span className="text-red-500 font-extrabold shrink-0">&bull;</span>
+                            <span>{err}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
 
             {/* Question Stack List */}
-            <section className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 shadow-2xl backdrop-blur-2xl relative">
+            <section className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 shadow-2xl backdrop-blur-2xl relative flex flex-col">
               <h3 className="text-lg font-black border-b border-white/5 pb-3 flex items-center gap-2 text-white">
                 <BarChart3 className="size-4 text-cyan-400" />
                 Question Stack ({questions.length})
               </h3>
 
-              {/* Grouped Launch Action Button */}
-              {questions.length > 0 && (
-                <div className="mt-4 mb-4">
+              {/* Scrollable Container */}
+              <div className="mt-4 max-h-[60vh] overflow-y-auto pr-1 relative flex-1">
+                
+                {/* Grouped Launch & Delete Sticky Action Buttons */}
+                {questions.length > 0 && (
+                  <div className="sticky top-0 z-10 bg-[#0f172a]/95 backdrop-blur-md border-b border-white/5 pb-3 mb-3 pt-1">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        onClick={handleLaunchSelected}
+                        disabled={selectedQuestionIds.length === 0}
+                        className="flex-1 min-w-[110px] h-10 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-40 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-500/10 animate-all duration-200"
+                        title="Launch Selected"
+                      >
+                        <Play className="size-3.5 text-slate-950" />
+                        Launch ({selectedQuestionIds.length})
+                      </Button>
+                      
+                      <Button
+                        type="button"
+                        onClick={handleLaunchAll}
+                        className="flex-1 min-w-[110px] h-10 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/10 animate-all duration-200"
+                        title="Launch All Questions"
+                      >
+                        <Radio className="size-3.5 animate-pulse text-slate-950" />
+                        Launch All
+                      </Button>
+
+                      <Button
+                        type="button"
+                        onClick={handleBulkDelete}
+                        disabled={selectedQuestionIds.length === 0}
+                        className="flex-1 min-w-[110px] h-10 bg-red-500/10 hover:bg-red-500/20 disabled:opacity-40 text-red-400 border border-red-500/20 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-red-500/10 animate-all duration-200"
+                        title="Delete Selected"
+                      >
+                        <Trash2 className="size-3.5" />
+                        Delete ({selectedQuestionIds.length})
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                
+                <div className="space-y-2.5">
+                  {questions.length === 0 ? (
+                    <p className="text-xs text-slate-500 text-center py-8">
+                      Session stack is empty. Create some questions above!
+                    </p>
+                  ) : (
+                    paginatedQuestions.map((q, idx) => {
+                      const globalIndex = (currentPage - 1) * questionsPerPage + idx;
+                      const isExpanded = expandedQuestionIds.includes(q.id);
+                      return (
+                        <div
+                          key={q.id}
+                          onClick={() => {
+                            setActiveQuestion(q);
+                            void reloadResponses(q.id);
+                          }}
+                          className={`p-3 rounded-xl border flex flex-col gap-2 transition-all duration-200 cursor-pointer hover:bg-slate-800 ${
+                            activeQuestion?.id === q.id 
+                              ? "border-cyan-400 bg-cyan-400/10 shadow-lg shadow-cyan-400/5" 
+                              : q.is_live
+                              ? "border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10"
+                              : "border-white/5 bg-slate-950/20 hover:bg-slate-950/40"
+                          }`}
+                        >
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="flex gap-3 items-start flex-1 min-w-0">
+                              <input
+                                type="checkbox"
+                                id={`select-${q.id}`}
+                                name={`select-${q.id}`}
+                                aria-label={`Select Question ${globalIndex + 1}`}
+                                className="mt-1 size-4 shrink-0 rounded border-white/10 bg-slate-950 accent-cyan-500 cursor-pointer"
+                                checked={selectedQuestionIds.includes(q.id)}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleSelectQuestion(q.id);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className={`inline-block rounded-[4px] text-[9px] font-extrabold px-2 py-0.5 uppercase tracking-wider ${
+                                    q.is_live ? "bg-cyan-500/20 text-cyan-400" : "bg-slate-800 text-slate-400"
+                                  }`}>
+                                    Q{globalIndex + 1} &middot; {q.type === "multiple_choice" ? "MC" : "Word"}
+                                  </span>
+                                  {q.is_live ? (
+                                    <span className="inline-block rounded-[4px] text-[9px] font-black px-2 py-0.5 uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse">
+                                      LIVE
+                                    </span>
+                                  ) : (questionResponseCounts[q.id] || 0) > 0 ? (
+                                    <span className="inline-block rounded-[4px] text-[9px] font-extrabold px-2 py-0.5 uppercase tracking-wider bg-slate-700/50 text-slate-300 border border-white/5">
+                                      Completed
+                                    </span>
+                                  ) : (
+                                    <span className="inline-block rounded-[4px] text-[9px] font-extrabold px-2 py-0.5 uppercase tracking-wider bg-slate-800/40 text-slate-500 border border-dashed border-white/5">
+                                      Draft
+                                    </span>
+                                  )}
+                                </div>
+                                <h4 className="font-extrabold text-sm mt-1 text-slate-200 truncate whitespace-nowrap" title={q.prompt_text}>
+                                  {q.prompt_text}
+                                </h4>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                              {q.type === "multiple_choice" && q.options?.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleToggleExpandQuestion(q.id, e)}
+                                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer transition-colors"
+                                  title={isExpanded ? "Collapse Options" : "Expand Options"}
+                                >
+                                  {isExpanded ? (
+                                    <ChevronUp className="size-3.5" />
+                                  ) : (
+                                    <ChevronDown className="size-3.5" />
+                                  )}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleMoveQuestion(globalIndex, "up")}
+                                disabled={globalIndex === 0}
+                                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 disabled:opacity-20 cursor-pointer transition-colors"
+                                title="Move Up"
+                              >
+                                <ArrowUp className="size-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleMoveQuestion(globalIndex, "down")}
+                                disabled={globalIndex === questions.length - 1}
+                                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 disabled:opacity-20 cursor-pointer transition-colors"
+                                title="Move Down"
+                              >
+                                <ArrowDown className="size-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleDeleteQuestion(q.id);
+                                }}
+                                className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 cursor-pointer shrink-0 transition-colors"
+                                title="Delete Question"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Collapsible Options Tray */}
+                          {q.type === "multiple_choice" && q.options?.length > 0 && isExpanded && (
+                            <div 
+                              className="mt-1 pl-7 pr-2 py-2 rounded-lg bg-slate-950/40 border border-white/5 space-y-1"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Options preview:</p>
+                              {q.options.map((opt, oIdx) => (
+                                <div key={oIdx} className="text-xs text-slate-300 flex items-center gap-2">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+                                  <span className="truncate">{opt}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
                   <Button
                     type="button"
-                    onClick={handleLaunchSelected}
-                    disabled={selectedQuestionIds.length === 0}
-                    className="w-full h-11 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-40 text-slate-950 font-black text-xs uppercase flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-cyan-500/10"
+                    variant="ghost"
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    className="h-9 px-3 text-xs font-bold text-slate-400 hover:text-white hover:bg-white/5 disabled:opacity-30 cursor-pointer transition-all duration-200"
                   >
-                    <Play className="size-4 text-slate-950" />
-                    Launch Selected ({selectedQuestionIds.length})
+                    Prev
+                  </Button>
+                  <span className="text-xs font-bold text-slate-400 select-none">
+                    Page <span className="text-cyan-400 font-extrabold">{currentPage}</span> of <span className="text-slate-300 font-extrabold">{totalPages}</span>
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    className="h-9 px-3 text-xs font-bold text-slate-400 hover:text-white hover:bg-white/5 disabled:opacity-30 cursor-pointer transition-all duration-200"
+                  >
+                    Next
                   </Button>
                 </div>
               )}
-              
-              <div className="mt-2 space-y-3 max-h-80 overflow-y-auto pr-1">
-                {questions.length === 0 ? (
-                  <p className="text-xs text-slate-500 text-center py-8">
-                    Session stack is empty. Create some questions above!
-                  </p>
-                ) : (
-                  questions.map((q, index) => (
-                    <div
-                      key={q.id}
-                      onClick={() => {
-                        setActiveQuestion(q);
-                        void reloadResponses(q.id);
-                      }}
-                      className={`p-3 rounded-xl border flex flex-col gap-2.5 transition-all duration-200 cursor-pointer ${
-                        activeQuestion?.id === q.id 
-                          ? "border-cyan-400 bg-cyan-400/10 shadow-lg shadow-cyan-400/5" 
-                          : q.is_live
-                          ? "border-cyan-500/40 bg-cyan-500/5 hover:bg-cyan-500/10"
-                          : "border-white/5 bg-slate-950/20 hover:bg-slate-950/40"
-                      }`}
-                    >
-                      <div className="flex justify-between items-start gap-2">
-                        <div className="flex gap-3 items-start flex-1 min-w-0">
-                          <input
-                            type="checkbox"
-                            id={`select-${q.id}`}
-                            name={`select-${q.id}`}
-                            aria-label={`Select Question ${index + 1}`}
-                            className="mt-1 size-4 shrink-0 rounded border-white/10 bg-slate-950 accent-cyan-500 cursor-pointer"
-                            checked={selectedQuestionIds.includes(q.id)}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              handleToggleSelectQuestion(q.id);
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className={`inline-block rounded-[4px] text-[9px] font-extrabold px-2 py-0.5 uppercase tracking-wider ${
-                                q.is_live ? "bg-cyan-500/20 text-cyan-400" : "bg-slate-800 text-slate-400"
-                              }`}>
-                                Q{index + 1} &middot; {q.type === "multiple_choice" ? "MC" : "Word"}
-                              </span>
-                              {q.is_live ? (
-                                <span className="inline-block rounded-[4px] text-[9px] font-black px-2 py-0.5 uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse">
-                                  LIVE
-                                </span>
-                              ) : (questionResponseCounts[q.id] || 0) > 0 ? (
-                                <span className="inline-block rounded-[4px] text-[9px] font-extrabold px-2 py-0.5 uppercase tracking-wider bg-slate-700/50 text-slate-300 border border-white/5">
-                                  Completed
-                                </span>
-                              ) : (
-                                <span className="inline-block rounded-[4px] text-[9px] font-extrabold px-2 py-0.5 uppercase tracking-wider bg-slate-800/40 text-slate-500 border border-dashed border-white/5">
-                                  Draft
-                                </span>
-                              )}
-                            </div>
-                            <h4 className="font-extrabold text-sm mt-1 text-slate-200 line-clamp-2">
-                              {q.prompt_text}
-                            </h4>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => handleMoveQuestion(index, "up")}
-                            disabled={index === 0}
-                            className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 disabled:opacity-20 cursor-pointer"
-                            title="Move Up"
-                          >
-                            <ArrowUp className="size-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleMoveQuestion(index, "down")}
-                            disabled={index === questions.length - 1}
-                            className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 disabled:opacity-20 cursor-pointer"
-                            title="Move Down"
-                          >
-                            <ArrowDown className="size-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void handleDeleteQuestion(q.id);
-                            }}
-                            className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 cursor-pointer shrink-0"
-                            title="Delete Question"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
             </section>
             
           </div>

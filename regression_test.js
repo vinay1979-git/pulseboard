@@ -30,6 +30,7 @@ async function runTests() {
     }
   }
 
+  let newSession = null;
   try {
     // Test 1: Get Seed Session
     const session = await apiCall("getSessionByCode", { code: "123456" });
@@ -40,7 +41,7 @@ async function runTests() {
     assert(questions.length >= 2, `getQuestions returns ${questions.length} questions for seed session.`);
 
     // Test 3: Create New Session
-    const newSession = await apiCall("createSession", { userId: "demo-user-id", title: "Automated Regression Room" });
+    newSession = await apiCall("createSession", { userId: "test-regression-user-id", title: "Automated Regression Room" });
     assert(newSession.title === "Automated Regression Room" && newSession.status === "inactive", "createSession creates a new inactive room.");
 
     // Test 4: Activate Session
@@ -126,6 +127,14 @@ async function runTests() {
   } catch (err) {
     console.error("💥 Test suite encountered fatal error:", err);
     failed++;
+  } finally {
+    console.log("🧹 Running teardown cleanup for regression test data...");
+    try {
+      await apiCall("cleanupTestData", { userId: "test-regression-user-id" });
+      console.log("🗑️ Test database successfully cleared of test-pollution sessions.");
+    } catch (cleanupErr) {
+      console.error("⚠️ Failed to clean up test session:", cleanupErr.message);
+    }
   }
 
   console.log("\n=========================================");

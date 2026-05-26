@@ -91,8 +91,16 @@ export async function reorderQuestions(sessionId: string, questionIds: string[])
   return apiCall("reorderQuestions", { sessionId, questionIds });
 }
 
-export async function syncUserProfile(userId: string, email: string): Promise<UserProfile> {
-  return apiCall("syncUserProfile", { userId, email });
+export async function syncUserProfile(userId: string, email: string, avatarUrl?: string | null): Promise<UserProfile> {
+  return apiCall("syncUserProfile", { userId, email, avatarUrl });
+}
+
+export async function updateUserProfileAvatar(userId: string, avatarUrl: string): Promise<void> {
+  return apiCall("updateUserProfileAvatar", { userId, avatarUrl });
+}
+
+export async function bulkImportQuestions(sessionId: string, questionsList: any[]): Promise<void> {
+  return apiCall("bulkImportQuestions", { sessionId, questionsList });
 }
 
 export async function getAllUsers(): Promise<UserProfile[]> {
@@ -105,4 +113,8 @@ export async function approveUser(userId: string): Promise<void> {
 
 export async function manuallyAddUser(email: string): Promise<UserProfile> {
   return apiCall("manuallyAddUser", { email });
+}
+
+export async function cleanupTestData(userId: string): Promise<void> {
+  return apiCall("cleanupTestData", { userId });
 }

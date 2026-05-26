@@ -190,40 +190,125 @@ async function getSessionCodeByQuestionId(questionId: string): Promise<string | 
 
 // Database Adapter Methods
 
-export async function getSessions(userId: string): Promise<Session[]> {
+export async function getSessions(userId: string, isSuperAdmin = false): Promise<Session[]> {
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createServerClient();
-      const { data, error } = await supabase
-        .from("sessions")
-        .select("*")
-        .eq("created_by", userId)
-        .order("updated_at", { ascending: false });
+      let query = supabase.from("sessions").select("*");
       
-      if (!error && data) return data as Session[];
+      if (!isSuperAdmin) {
+        query = query.eq("created_by", userId);
+      }
+      
+      const { data, error } = await query.order("updated_at", { ascending: false });
+      
+      if (!error && data) {
+        // Fetch all profiles to map creator info dynamically in a safe join bypass
+        const { data: profiles } = await supabase.from("profiles").select("*");
+        const profileMap = new Map((profiles as UserProfile[])?.map((p: UserProfile) => [p.id, p]) || []);
+        
+        return (data as Session[]).map(s => {
+          const creator = profileMap.get(s.created_by);
+          let creatorName = creator?.email.split('@')[0] || "Unknown";
+          if (creator?.email === "vinay1979@gmail.com") creatorName = "Vinay Visvanathan";
+          return {
+            ...s,
+            creator_email: creator?.email || "unknown@test.com",
+            creator_name: creatorName
+          };
+        });
+      }
     } catch (e) {
       console.error("Supabase getSessions error, falling back to mock:", e);
     }
   }
   
   // Local Mock Fallback
-  return db.sessions.filter(s => s.created_by === userId || s.created_by === "demo-user-id");
+  const sessionsList = isSuperAdmin
+    ? db.sessions
+    : db.sessions.filter(s => s.created_by === userId || s.created_by === "demo-user-id");
+    
+  return sessionsList.map(s => {
+    const creator = db.profiles.find(p => p.id === s.created_by);
+    let creatorName = creator?.email.split('@')[0] || "Unknown";
+    if (creator?.email === "vinay1979@gmail.com") creatorName = "Vinay Visvanathan";
+    return {
+      ...s,
+      creator_email: creator?.email || "vinay1979@gmail.com",
+      creator_name: creatorName
+    };
+  });
 }
 
 export async function getSessionByCode(code: string): Promise<Session | null> {
   if (isSupabaseConfigured()) {
     try {
-      // Need a client that bypasses complex SSR cookies if running client-side,
-      // let's use the browser client if in browser, or server client if in server.
       const isServer = typeof window === "undefined";
       const supabase = isServer ? await createServerClient() : createBrowserClient();
-      const { data, error } = await supabase
+      const { data: session, error: sessionError } = await supabase
         .from("sessions")
         .select("*")
         .eq("code", code)
         .maybeSingle();
       
-      if (!error && data) return data as Session;
+      if (sessionError) {
+        console.error("Supabase getSessionByCode error:", sessionError.message);
+      }
+      
+      if (!sessionError && session) {
+        const userIds = [session.created_by];
+        if (session.updated_by) {
+          userIds.push(session.updated_by);
+        }
+        
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const validUserIds = userIds.filter(id => uuidRegex.test(id));
+        
+        let profiles: any[] = [];
+        if (validUserIds.length > 0) {
+          const { data, error: profilesError } = await supabase
+            .from("profiles")
+            .select("*")
+            .in("id", validUserIds);
+            
+          if (profilesError) {
+            console.error("Supabase getSessionByCode profiles fetch error:", profilesError.message);
+          } else if (data) {
+            profiles = data;
+          }
+        }
+        
+        const profileMap = new Map((profiles as UserProfile[])?.map((p: UserProfile) => [p.id, p]) || []);
+        const creator = profileMap.get(session.created_by);
+        const updater = session.updated_by ? profileMap.get(session.updated_by) : null;
+        
+        let creatorName = creator?.email ? creator.email.split('@')[0] : "Unknown";
+        if (creator?.email === "vinay1979@gmail.com") creatorName = "Vinay Visvanathan";
+        
+        let updaterName = undefined;
+        let updaterEmail = undefined;
+        if (session.updated_by && updater?.email) {
+          updaterName = updater.email.split('@')[0];
+          if (updater.email === "vinay1979@gmail.com") updaterName = "Vinay Visvanathan";
+          updaterEmail = updater.email;
+        }
+        
+        return {
+          ...session,
+          creator_name: creatorName,
+          creator_email: creator?.email || "unknown@test.com",
+          updater_name: updaterName,
+          updater_email: updaterEmail,
+          creator: {
+            full_name: creatorName,
+            email: creator?.email || "unknown@test.com"
+          },
+          updater: session.updated_by ? {
+            full_name: updaterName || "Unknown",
+            email: updater?.email || "unknown@test.com"
+          } : null
+        } as Session;
+      }
     } catch (e) {
       console.error("Supabase getSessionByCode error, falling back to mock:", e);
     }
@@ -231,23 +316,89 @@ export async function getSessionByCode(code: string): Promise<Session | null> {
   
   // Local Mock Fallback
   const session = db.sessions.find(s => s.code === code);
-  return session ?? null;
+  if (session) {
+    const creator = db.profiles.find(p => p.id === session.created_by);
+    const updater = session.updated_by ? db.profiles.find(p => p.id === session.updated_by) : null;
+    
+    let creatorName = creator?.email.split('@')[0] || "Unknown";
+    if (creator?.email === "vinay1979@gmail.com") creatorName = "Vinay Visvanathan";
+    
+    let updaterName = undefined;
+    let updaterEmail = undefined;
+    if (session.updated_by && updater?.email) {
+      updaterName = updater.email.split('@')[0];
+      if (updater.email === "vinay1979@gmail.com") updaterName = "Vinay Visvanathan";
+      updaterEmail = updater.email;
+    }
+    
+    return {
+      ...session,
+      creator_name: creatorName,
+      creator_email: creator?.email || "vinay1979@gmail.com",
+      updater_name: updaterName,
+      updater_email: updaterEmail,
+      creator: {
+        full_name: creatorName,
+        email: creator?.email || "vinay1979@gmail.com"
+      },
+      updater: session.updated_by ? {
+        full_name: updaterName || "Unknown",
+        email: updater?.email || "vinay1979@gmail.com"
+      } : null
+    } as Session;
+  }
+  return null;
+}
+
+export async function touchSession(sessionId: string): Promise<void> {
+  const now = new Date().toISOString();
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const activeUserId = user?.id || "demo-user-id";
+
+  if (isSupabaseConfigured()) {
+    try {
+      const { error } = await supabase
+        .from("sessions")
+        .update({
+          updated_by: activeUserId,
+          updated_at: now
+        })
+        .eq("id", sessionId);
+      if (error) throw error;
+    } catch (e) {
+      console.error("Supabase touchSession error:", e);
+    }
+  } else {
+    // Local Mock Fallback
+    const session = db.sessions.find(s => s.id === sessionId);
+    if (session) {
+      session.updated_by = activeUserId;
+      session.updated_at = now;
+    }
+  }
 }
 
 export async function createSession(userId: string, title: string): Promise<Session> {
+  const sanitizedTitle = sanitizeText(title).trim();
+  if (!sanitizedTitle || sanitizedTitle.toLowerCase() === "untitled session") {
+    throw new Error("Invalid session title. Title cannot be empty or 'Untitled Session'.");
+  }
+
   // Generate random unique 6-digit code
   let code = "";
   for (let i = 0; i < 6; i++) {
     code += Math.floor(Math.random() * 10).toString();
   }
 
-  const sanitizedTitle = sanitizeText(title);
   const newSession: Session = {
     id: crypto.randomUUID(),
     code,
-    title: sanitizedTitle !== "" ? sanitizedTitle : "New Polling Session",
+    title: sanitizedTitle,
     status: "inactive",
     created_by: userId,
+    updated_by: userId,
+    last_live_at: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -274,13 +425,27 @@ export async function createSession(userId: string, title: string): Promise<Sess
   return newSession;
 }
 
-export async function updateSessionStatus(sessionId: string, status: SessionStatus): Promise<void> {
+export async function updateSessionStatus(sessionId: string, status: SessionStatus, userId?: string): Promise<void> {
+  const now = new Date().toISOString();
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const activeUserId = userId || user?.id || "demo-user-id";
+
+  const updates: any = { 
+    status, 
+    updated_at: now,
+    updated_by: activeUserId
+  };
+  
+  if (status === "active") {
+    updates.last_live_at = now;
+  }
+
   if (isSupabaseConfigured()) {
     try {
-      const supabase = await createServerClient();
       const { error } = await supabase
         .from("sessions")
-        .update({ status, updated_at: new Date().toISOString() })
+        .update(updates)
         .eq("id", sessionId);
       
       if (error) throw new Error(error.message);
@@ -293,7 +458,11 @@ export async function updateSessionStatus(sessionId: string, status: SessionStat
     const session = db.sessions.find(s => s.id === sessionId);
     if (session) {
       session.status = status;
-      session.updated_at = new Date().toISOString();
+      session.updated_at = now;
+      session.updated_by = activeUserId;
+      if (status === "active") {
+        session.last_live_at = now;
+      }
     }
   }
 
@@ -328,7 +497,9 @@ export async function deleteSession(sessionId: string): Promise<void> {
 
   // Local Mock Fallback
   db.sessions = db.sessions.filter(s => s.id !== sessionId);
+  const qIds = db.questions.filter(q => q.session_id === sessionId).map(q => q.id);
   db.questions = db.questions.filter(q => q.session_id !== sessionId);
+  db.responses = db.responses.filter(r => !qIds.includes(r.question_id));
 }
 
 export async function getQuestions(sessionId: string): Promise<Question[]> {
@@ -423,7 +594,10 @@ export async function createQuestion(
         .single();
       
       if (error) throw new Error(error.message);
-      if (data) return data as Question;
+      if (data) {
+        await touchSession(sessionId);
+        return data as Question;
+      }
     } catch (e: any) {
       console.error("Supabase createQuestion error:", e);
       throw new Error(e.message || "Failed to create question");
@@ -432,25 +606,36 @@ export async function createQuestion(
 
   // Local Mock Fallback
   db.questions.push(newQuestion);
+  await touchSession(sessionId);
   return newQuestion;
 }
 
 export async function deleteQuestion(questionId: string): Promise<void> {
+  let sessionId: string | null = null;
+  
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createServerClient();
+      const { data: q } = await supabase.from("questions").select("session_id").eq("id", questionId).maybeSingle();
+      if (q) sessionId = q.session_id;
+
       const { error } = await supabase.from("questions").delete().eq("id", questionId);
       if (error) throw new Error(error.message);
-      return;
     } catch (e: any) {
       console.error("Supabase deleteQuestion error:", e);
       throw new Error(e.message || "Failed to delete question");
     }
+  } else {
+    // Local Mock Fallback
+    const q = db.questions.find(q => q.id === questionId);
+    if (q) sessionId = q.session_id;
+    db.questions = db.questions.filter(q => q.id !== questionId);
+    db.responses = db.responses.filter(r => r.question_id !== questionId);
   }
 
-  // Local Mock Fallback
-  db.questions = db.questions.filter(q => q.id !== questionId);
-  db.responses = db.responses.filter(r => r.question_id !== questionId);
+  if (sessionId) {
+    await touchSession(sessionId);
+  }
 }
 
 export async function setQuestionLive(sessionId: string, questionId: string): Promise<void> {
@@ -485,6 +670,8 @@ export async function setQuestionLive(sessionId: string, questionId: string): Pr
       }
     });
   }
+
+  await touchSession(sessionId);
 
   // Broadcast via Pusher
   const sessionCode = await getSessionCodeById(sessionId);
@@ -654,6 +841,8 @@ export async function setQuestionsLive(sessionId: string, questionIds: string[])
     });
   }
 
+  await touchSession(sessionId);
+
   // Broadcast via Pusher
   const sessionCode = await getSessionCodeById(sessionId);
   if (sessionCode && pusherServer) {
@@ -674,12 +863,20 @@ export async function setQuestionsLive(sessionId: string, questionIds: string[])
 
 export async function updateSessionTitle(sessionId: string, title: string): Promise<void> {
   const sanitizedTitle = sanitizeText(title);
+  const now = new Date().toISOString();
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const activeUserId = user?.id || "demo-user-id";
+
   if (isSupabaseConfigured()) {
     try {
-      const supabase = await createServerClient();
       const { error } = await supabase
         .from("sessions")
-        .update({ title: sanitizedTitle, updated_at: new Date().toISOString() })
+        .update({ 
+          title: sanitizedTitle, 
+          updated_at: now,
+          updated_by: activeUserId
+        })
         .eq("id", sessionId);
       
       if (error) throw new Error(error.message);
@@ -692,7 +889,8 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
     const session = db.sessions.find(s => s.id === sessionId);
     if (session) {
       session.title = sanitizedTitle !== "" ? sanitizedTitle : "Untitled Session";
-      session.updated_at = new Date().toISOString();
+      session.updated_at = now;
+      session.updated_by = activeUserId;
     }
   }
 }
@@ -725,9 +923,11 @@ export async function reorderQuestions(sessionId: string, questionIds: string[])
       }
     });
   }
+
+  await touchSession(sessionId);
 }
 
-export async function syncUserProfile(userId: string, email: string): Promise<UserProfile> {
+export async function syncUserProfile(userId: string, email: string, avatarUrl?: string | null): Promise<UserProfile> {
   const isVinay = email.toLowerCase() === "vinay1979@gmail.com";
   
   if (isSupabaseConfigured()) {
@@ -741,10 +941,25 @@ export async function syncUserProfile(userId: string, email: string): Promise<Us
         .maybeSingle();
       
       if (existing) {
+        let needsUpdate = false;
+        const updates: any = {};
+        
         if (isVinay && (existing.role !== "super-admin" || existing.approval_status !== "approved")) {
+          updates.role = "super-admin";
+          updates.approval_status = "approved";
+          needsUpdate = true;
+        }
+        
+        if (avatarUrl && !existing.avatar_url) {
+          updates.avatar_url = avatarUrl;
+          needsUpdate = true;
+        }
+        
+        if (needsUpdate) {
+          updates.updated_at = new Date().toISOString();
           const { data: updated } = await supabase
             .from("profiles")
-            .update({ role: "super-admin", approval_status: "approved", updated_at: new Date().toISOString() })
+            .update(updates)
             .eq("id", userId)
             .select()
             .single();
@@ -758,6 +973,7 @@ export async function syncUserProfile(userId: string, email: string): Promise<Us
         email,
         role: isVinay ? "super-admin" : "power-user",
         approval_status: isVinay ? "approved" : "pending",
+        avatar_url: avatarUrl || null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -783,6 +999,7 @@ export async function syncUserProfile(userId: string, email: string): Promise<Us
       email,
       role: isVinay ? "super-admin" : "power-user",
       approval_status: isVinay ? "approved" : "pending",
+      avatar_url: avatarUrl || null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -791,6 +1008,9 @@ export async function syncUserProfile(userId: string, email: string): Promise<Us
     if (isVinay) {
       profile.role = "super-admin";
       profile.approval_status = "approved";
+    }
+    if (avatarUrl && !profile.avatar_url) {
+      profile.avatar_url = avatarUrl;
     }
   }
   return profile;
@@ -877,4 +1097,129 @@ export async function manuallyAddUser(email: string): Promise<UserProfile> {
 
   db.profiles.push(newProfile);
   return newProfile;
+}
+
+export async function updateUserProfileAvatar(userId: string, avatarUrl: string): Promise<void> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = await createServerClient();
+      await supabase
+        .from("profiles")
+        .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() })
+        .eq("id", userId);
+    } catch (e) {
+      console.error("Supabase updateUserProfileAvatar error:", e);
+    }
+  } else {
+    // Local Mock Fallback
+    const profile = db.profiles.find(p => p.id === userId);
+    if (profile) {
+      profile.avatar_url = avatarUrl;
+      profile.updated_at = new Date().toISOString();
+    }
+  }
+}
+
+export async function bulkImportQuestions(sessionId: string, questionsList: any[]): Promise<void> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = await createServerClient();
+      
+      const { data: existing } = await supabase
+        .from("questions")
+        .select("order_index")
+        .eq("session_id", sessionId)
+        .order("order_index", { ascending: false })
+        .limit(1);
+        
+      let startIdx = existing && existing.length > 0 ? existing[0].order_index + 1 : 0;
+      
+      const inserts = questionsList.map((q, idx) => ({
+        id: crypto.randomUUID(),
+        session_id: sessionId,
+        type: q.type,
+        prompt_text: sanitizeText(q.promptText),
+        options: q.options,
+        is_live: false,
+        created_at: new Date().toISOString(),
+        order_index: startIdx + idx,
+      }));
+      
+      const { error } = await supabase
+        .from("questions")
+        .insert(inserts);
+        
+      if (error) throw error;
+    } catch (e: any) {
+      console.error("Supabase bulkImportQuestions error:", e);
+      throw new Error(e.message || "Failed to bulk import questions");
+    }
+  } else {
+    // Local Mock Fallback
+    const existing = db.questions.filter(q => q.session_id === sessionId);
+    let startIdx = existing.length > 0 ? Math.max(...existing.map(q => q.order_index)) + 1 : 0;
+    
+    questionsList.forEach((q, idx) => {
+      db.questions.push({
+        id: crypto.randomUUID(),
+        session_id: sessionId,
+        type: q.type,
+        prompt_text: sanitizeText(q.promptText),
+        options: q.options,
+        is_live: false,
+        created_at: new Date().toISOString(),
+        order_index: startIdx + idx,
+      });
+    });
+  }
+
+  await touchSession(sessionId);
+}
+
+export async function cleanupTestData(userId: string): Promise<void> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = await createServerClient();
+      
+      // Fetch all session IDs for this user
+      const { data: sessions, error: fetchErr } = await supabase
+        .from("sessions")
+        .select("id")
+        .eq("created_by", userId);
+        
+      if (fetchErr) throw fetchErr;
+      
+      if (sessions && sessions.length > 0) {
+        // filter out seed sessions
+        const sIds = (sessions as { id: string }[])
+          .map((s: { id: string }) => s.id)
+          .filter(id => id !== "demo-session-uuid" && id !== "inactive-demo-uuid");
+          
+        if (sIds.length > 0) {
+          const { error: deleteErr } = await supabase
+            .from("sessions")
+            .delete()
+            .in("id", sIds);
+          if (deleteErr) throw deleteErr;
+        }
+      }
+    } catch (e) {
+      logDbError("cleanupTestData", e);
+    }
+  } else {
+    // Local Mock Fallback
+    const testSessions = db.sessions.filter(
+      s => s.created_by === userId && s.id !== "demo-session-uuid" && s.id !== "inactive-demo-uuid"
+    );
+    const testSessionIds = testSessions.map(s => s.id);
+    
+    db.sessions = db.sessions.filter(s => !testSessionIds.includes(s.id));
+    
+    const testQuestionIds = db.questions
+      .filter(q => testSessionIds.includes(q.session_id))
+      .map(q => q.id);
+      
+    db.questions = db.questions.filter(q => !testSessionIds.includes(q.session_id));
+    db.responses = db.responses.filter(r => !testQuestionIds.includes(r.question_id));
+  }
 }

@@ -44,10 +44,10 @@ export default async function DashboardPage() {
         redirect("/awaiting-approval");
       }
 
-      sessions = await getSessions(user.id);
+      sessions = await getSessions(user.id, role === "super-admin");
     } catch (e) {
       console.error("Dashboard auth check failed, using local mock:", e);
-      sessions = await getSessions("demo-user-id");
+      sessions = await getSessions("demo-user-id", true); // Local default is super-admin Vinay
     }
   } else {
     // Local Fallback User
@@ -56,7 +56,7 @@ export default async function DashboardPage() {
     if (profile.approval_status === "pending") {
       redirect("/awaiting-approval");
     }
-    sessions = await getSessions("demo-user-id");
+    sessions = await getSessions("demo-user-id", role === "super-admin");
   }
 
   return (
