@@ -754,6 +754,23 @@ export async function submitResponse(
       const isServer = typeof window === "undefined";
       const supabase = isServer ? await createServerClient() : createBrowserClient();
       
+      let dbParticipantId = pulseParticipantId || null;
+      if (dbParticipantId) {
+        if (isMockId(dbParticipantId)) {
+          dbParticipantId = null;
+        } else {
+          // Verify if it exists in the database
+          const { data: participantExists } = await supabase
+            .from("pulse_participants")
+            .select("id")
+            .eq("id", dbParticipantId)
+            .maybeSingle();
+          if (!participantExists) {
+            dbParticipantId = null;
+          }
+        }
+      }
+
       // Check if participant has already responded
       const { data: existing, error: findError } = await supabase
         .from("responses")
@@ -770,7 +787,7 @@ export async function submitResponse(
           .update({ 
             value: sanitizedValue, 
             created_at: new Date().toISOString(),
-            pulse_participant_id: pulseParticipantId || null
+            pulse_participant_id: dbParticipantId
           })
           .eq("id", existing.id)
           .select()
@@ -781,7 +798,10 @@ export async function submitResponse(
       } else {
         const { data, error } = await supabase
           .from("responses")
-          .insert(newResponse)
+          .insert({
+            ...newResponse,
+            pulse_participant_id: dbParticipantId
+          })
           .select()
           .single();
         
