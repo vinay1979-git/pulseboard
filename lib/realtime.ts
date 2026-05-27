@@ -134,6 +134,7 @@ export function subscribeToSession(
   let broadcastChannel: BroadcastChannel | null = null;
   let heartbeatInterval: NodeJS.Timeout | null = null;
   let cleanupInterval: NodeJS.Timeout | null = null;
+  let initialHeartbeatTimeout: NodeJS.Timeout | null = null;
 
   if (typeof window !== "undefined") {
     broadcastChannel = new BroadcastChannel(`pulseboard-${channelName}`);
@@ -163,11 +164,15 @@ export function subscribeToSession(
 
     // Broadcast our heartbeat every 1.5 seconds
     heartbeatInterval = setInterval(() => {
-      if (broadcastChannel) {
-        broadcastChannel.postMessage({
-          type: "presence_heartbeat",
-          payload: { tabId }
-        });
+      try {
+        if (broadcastChannel) {
+          broadcastChannel.postMessage({
+            type: "presence_heartbeat",
+            payload: { tabId }
+          });
+        }
+      } catch (e) {
+        // Safe check for closed channels
       }
     }, 1500);
 
@@ -190,12 +195,16 @@ export function subscribeToSession(
     }, 2000);
     
     // Broadcast initial heartbeat right away to announce our arrival
-    setTimeout(() => {
-      if (broadcastChannel) {
-        broadcastChannel.postMessage({
-          type: "presence_heartbeat",
-          payload: { tabId }
-        });
+    initialHeartbeatTimeout = setTimeout(() => {
+      try {
+        if (broadcastChannel) {
+          broadcastChannel.postMessage({
+            type: "presence_heartbeat",
+            payload: { tabId }
+          });
+        }
+      } catch (e) {
+        // Safe check for closed channels
       }
     }, 200);
   }
@@ -261,8 +270,16 @@ export function subscribeToSession(
 
   return {
     unsubscribe: () => {
+      if (initialHeartbeatTimeout) {
+        clearTimeout(initialHeartbeatTimeout);
+      }
       if (broadcastChannel) {
-        broadcastChannel.close();
+        try {
+          broadcastChannel.close();
+        } catch (e) {
+          // Safe check
+        }
+        broadcastChannel = null;
       }
       if (pollInterval) {
         clearInterval(pollInterval);
@@ -288,8 +305,12 @@ export async function broadcastSessionEvent(
 
   // Local Broadcast fallback for same-machine instant sync
   if (typeof window !== "undefined") {
-    const broadcastChannel = new BroadcastChannel(`pulseboard-${channelName}`);
-    broadcastChannel.postMessage(event);
-    broadcastChannel.close();
+    try {
+      const broadcastChannel = new BroadcastChannel(`pulseboard-${channelName}`);
+      broadcastChannel.postMessage(event);
+      broadcastChannel.close();
+    } catch (e) {
+      // Safe check
+    }
   }
 }
