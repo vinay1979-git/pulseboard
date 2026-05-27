@@ -948,6 +948,40 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
   }
 }
 
+export async function updateSessionAutoLaunch(
+  sessionId: string,
+  autoLaunch: boolean,
+  timerSeconds: number
+): Promise<void> {
+  const now = new Date().toISOString();
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = await createServerClient();
+      const { error } = await supabase
+        .from("sessions")
+        .update({ 
+          auto_launch: autoLaunch, 
+          timer_seconds: timerSeconds,
+          updated_at: now
+        })
+        .eq("id", sessionId);
+      
+      if (error) throw new Error(error.message);
+    } catch (e: any) {
+      console.error("Supabase updateSessionAutoLaunch error:", e);
+      throw new Error(e.message || "Failed to update session auto launch");
+    }
+  } else {
+    // Local Mock Fallback
+    const session = db.sessions.find(s => s.id === sessionId);
+    if (session) {
+      session.auto_launch = autoLaunch;
+      session.timer_seconds = timerSeconds;
+      session.updated_at = now;
+    }
+  }
+}
+
 export async function reorderQuestions(sessionId: string, questionIds: string[]): Promise<void> {
   if (isSupabaseConfigured() && !isMockId(sessionId)) {
     try {
@@ -1347,10 +1381,8 @@ export async function registerParticipant(
 export async function getParticipants(sessionId: string): Promise<PulseParticipant[]> {
   if (isSupabaseConfigured()) {
     try {
-      const isServer = typeof window === "undefined";
-      const supabase = isServer ? await createServerClient() : createBrowserClient();
+      const supabase = createAdminClient();
       
-      // Anyone can SELECT participants since RLS has a public read policy
       const { data, error } = await supabase
         .from("pulse_participants")
         .select("*")
@@ -1372,6 +1404,43 @@ export async function getParticipants(sessionId: string): Promise<PulseParticipa
   return db.pulse_participants
     .filter(p => p.session_id === sessionId)
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+}
+
+export async function getAttemptedParticipantsCount(sessionId: string): Promise<number> {
+  if (isSupabaseConfigured() && !isMockId(sessionId)) {
+    try {
+      const supabase = createAdminClient();
+      
+      const { data: questions } = await supabase
+        .from("questions")
+        .select("id")
+        .eq("session_id", sessionId);
+      
+      if (!questions || questions.length === 0) return 0;
+      
+      const questionIds = questions.map(q => q.id);
+      
+      const { data: responses, error } = await supabase
+        .from("responses")
+        .select("participant_id, pulse_participant_id")
+        .in("question_id", questionIds);
+      
+      if (error) throw error;
+      
+      const uniqueIds = new Set(
+        (responses || []).map(r => r.pulse_participant_id || r.participant_id)
+      );
+      return uniqueIds.size;
+    } catch (e) {
+      logDbError("getAttemptedParticipantsCount", e);
+    }
+  }
+  
+  // Local Mock Fallback
+  const qIds = db.questions.filter(q => q.session_id === sessionId).map(q => q.id);
+  const responses = db.responses.filter(r => qIds.includes(r.question_id));
+  const uniqueIds = new Set(responses.map(r => r.pulse_participant_id || r.participant_id));
+  return uniqueIds.size;
 }
 
 export async function calculateScores(

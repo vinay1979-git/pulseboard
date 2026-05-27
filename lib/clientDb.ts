@@ -95,6 +95,14 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
   return apiCall("updateSessionTitle", { sessionId, title });
 }
 
+export async function updateSessionAutoLaunch(
+  sessionId: string,
+  autoLaunch: boolean,
+  timerSeconds: number
+): Promise<void> {
+  return apiCall("updateSessionAutoLaunch", { sessionId, autoLaunch, timerSeconds });
+}
+
 export async function reorderQuestions(sessionId: string, questionIds: string[]): Promise<void> {
   return apiCall("reorderQuestions", { sessionId, questionIds });
 }
@@ -133,6 +141,10 @@ export async function registerParticipant(sessionId: string, name: string, email
 
 export async function getParticipants(sessionId: string): Promise<any[]> {
   return apiCall("getParticipants", { sessionId });
+}
+
+export async function getAttemptedParticipantsCount(sessionId: string): Promise<number> {
+  return apiCall("getAttemptedParticipantsCount", { sessionId });
 }
 
 export async function calculateScores(questionId: string, correctOption: number): Promise<void> {

@@ -8,7 +8,8 @@ export interface RealtimeEvent {
     | "responses_reset"
     | "questions_timer_start"
     | "leaderboard_updated"
-    | "leaderboard-updated";
+    | "leaderboard-updated"
+    | "presence_count";
   payload: any;
 }
 
@@ -85,11 +86,39 @@ export function subscribeToSession(
         });
       });
 
+      // Presence Channel Support
+      const presenceChannelName = `presence-session-${sessionCode}`;
+      console.log(`Pusher subscribing to presence channel: ${presenceChannelName}`);
+      const presenceChannel: any = client.subscribe(presenceChannelName);
+
+      presenceChannel.bind("pusher:subscription_succeeded", (members: any) => {
+        onEvent({
+          type: "presence_count",
+          payload: { count: members.count }
+        });
+      });
+
+      presenceChannel.bind("pusher:member_added", (member: any) => {
+        onEvent({
+          type: "presence_count",
+          payload: { count: presenceChannel.members.count }
+        });
+      });
+
+      presenceChannel.bind("pusher:member_removed", (member: any) => {
+        onEvent({
+          type: "presence_count",
+          payload: { count: presenceChannel.members.count }
+        });
+      });
+
       return {
         unsubscribe: () => {
-          console.log(`Pusher unsubscribing from channel: ${channelName}`);
+          console.log(`Pusher unsubscribing from channels: ${channelName} and ${presenceChannelName}`);
           channel.unbind_all();
           client.unsubscribe(channelName);
+          presenceChannel.unbind_all();
+          client.unsubscribe(presenceChannelName);
         }
       };
     } catch (e) {
@@ -99,13 +128,76 @@ export function subscribeToSession(
 
   // --- LOCAL FALLBACK REALTIME SYNC (BroadcastChannel + Micro-polling) ---
   
-  // 1. Cross-tab instant communication via BroadcastChannel
+  const tabId = typeof window !== "undefined" ? Math.random().toString(36).substring(2, 9) : "";
+  const activeTabs = new Map<string, number>();
+
   let broadcastChannel: BroadcastChannel | null = null;
+  let heartbeatInterval: NodeJS.Timeout | null = null;
+  let cleanupInterval: NodeJS.Timeout | null = null;
+
   if (typeof window !== "undefined") {
     broadcastChannel = new BroadcastChannel(`pulseboard-${channelName}`);
+    
+    // Add ourselves initially
+    activeTabs.set(tabId, Date.now());
+    
     broadcastChannel.onmessage = (event) => {
-      onEvent(event.data as RealtimeEvent);
+      const data = event.data;
+      if (data && data.type === "presence_heartbeat") {
+        const senderTabId = data.payload.tabId;
+        const prevSize = activeTabs.size;
+        
+        activeTabs.set(senderTabId, Date.now());
+        
+        // Notify if a new tab joined
+        if (activeTabs.size !== prevSize) {
+          onEvent({
+            type: "presence_count",
+            payload: { count: activeTabs.size }
+          });
+        }
+      } else {
+        onEvent(data as RealtimeEvent);
+      }
     };
+
+    // Broadcast our heartbeat every 1.5 seconds
+    heartbeatInterval = setInterval(() => {
+      if (broadcastChannel) {
+        broadcastChannel.postMessage({
+          type: "presence_heartbeat",
+          payload: { tabId }
+        });
+      }
+    }, 1500);
+
+    // Periodically clean up offline tabs (no heartbeat in 4.5 seconds)
+    cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+      for (const [tId, lastSeen] of activeTabs.entries()) {
+        if (now - lastSeen > 4500 && tId !== tabId) {
+          activeTabs.delete(tId);
+          changed = true;
+        }
+      }
+      if (changed) {
+        onEvent({
+          type: "presence_count",
+          payload: { count: activeTabs.size }
+        });
+      }
+    }, 2000);
+    
+    // Broadcast initial heartbeat right away to announce our arrival
+    setTimeout(() => {
+      if (broadcastChannel) {
+        broadcastChannel.postMessage({
+          type: "presence_heartbeat",
+          payload: { tabId }
+        });
+      }
+    }, 200);
   }
 
   // 2. Micro-polling to support multi-device/multi-session sync
@@ -174,6 +266,12 @@ export function subscribeToSession(
       }
       if (pollInterval) {
         clearInterval(pollInterval);
+      }
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+      }
+      if (cleanupInterval) {
+        clearInterval(cleanupInterval);
       }
     }
   };

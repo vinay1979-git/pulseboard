@@ -30,6 +30,7 @@ import {
 import {
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -45,6 +46,21 @@ import type { Session, Question, Response } from "@/lib/schema";
 import * as clientDb from "@/lib/clientDb";
 import { subscribeToSession, broadcastSessionEvent } from "@/lib/realtime";
 import { createClient } from "@/lib/supabase/client";
+
+const CustomYAxisTick = ({ x, y, payload, index, activeQuestion }: any) => {
+  if (!activeQuestion) return null;
+  const isQuiz = activeQuestion.correct_option !== null && activeQuestion.correct_option !== undefined;
+  const optIndex = typeof index === "number" ? index : (activeQuestion.options?.indexOf(payload?.value) ?? -1);
+  const isCorrect = isQuiz && optIndex !== -1 && activeQuestion.correct_option === optIndex + 1;
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text x={-10} y={4} textAnchor="end" fill="#e2e8f0" fontSize={13} fontWeight="bold">
+        {isQuiz && optIndex !== -1 ? (isCorrect ? "✅ " : "❌ ") : ""}
+        {payload?.value || ""}
+      </text>
+    </g>
+  );
+};
 
 export default function HostConsolePage() {
   const params = useParams();
@@ -85,6 +101,15 @@ export default function HostConsolePage() {
   const [showCsvImporter, setShowCsvImporter] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const csvFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Phase 2: Auto Launch & Manual Sequence states
+  const [showAutoLaunchModal, setShowAutoLaunchModal] = useState(false);
+  const [autoLaunchDuration, setAutoLaunchDuration] = useState<number>(30);
+  const [autoLaunchError, setAutoLaunchError] = useState("");
+
+  // Phase 3: Real-time Participant metrics
+  const [onlineCount, setOnlineCount] = useState<number>(0);
+  const [attemptedCount, setAttemptedCount] = useState<number>(0);
 
   const questionsPerPage = 10;
   const totalPages = Math.max(1, Math.ceil(questions.length / questionsPerPage));
@@ -152,6 +177,72 @@ export default function HostConsolePage() {
     setSelectedQuestionIds((current) =>
       current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
     );
+  };
+
+  const handleAutoLaunchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session || questions.length === 0) return;
+    
+    if (autoLaunchDuration < 10 || autoLaunchDuration > 300) {
+      setAutoLaunchError("Timer duration must be between 10 and 300 seconds.");
+      return;
+    }
+    
+    setAutoLaunchError("");
+    try {
+      await clientDb.updateSessionAutoLaunch(session.id, true, autoLaunchDuration);
+      
+      setSession(current => current ? { ...current, auto_launch: true, timer_seconds: autoLaunchDuration } : null);
+      setShowAutoLaunchModal(false);
+      
+      await handleSetQuestionLive(questions[0].id);
+      
+      setActionMessage(`Auto-launch loop successfully triggered with ${autoLaunchDuration}s timer!`);
+      setTimeout(() => setActionMessage(""), 3000);
+    } catch (err: any) {
+      console.error("Auto launch failed:", err);
+      setAutoLaunchError(err.message || "Failed to configure auto launch.");
+    }
+  };
+
+  const getManualLaunchButtonText = () => {
+    if (!activeQuestion || questions.length === 0) return "Manual Launch";
+    const currentIdx = questions.findIndex(q => q.id === activeQuestion.id);
+    if (currentIdx === -1) return "Manual Launch";
+    return "Launch next";
+  };
+
+  const handleManualLaunch = async () => {
+    if (questions.length === 0 || !session) return;
+    
+    if (!activeQuestion) {
+      await handleSetQuestionLive(questions[0].id);
+    } else {
+      const currentIdx = questions.findIndex(q => q.id === activeQuestion.id);
+      if (currentIdx === -1) {
+        await handleSetQuestionLive(questions[0].id);
+      } else if (currentIdx === questions.length - 1) {
+        try {
+          await clientDb.setQuestionsLive(session.id, []);
+          setQuestions((current) =>
+            current.map((q) => ({ ...q, is_live: false }))
+          );
+          setActiveQuestion(null);
+          setResponses([]);
+          setParticipantsCount(0);
+          await broadcastSessionEvent(code, {
+            type: "question_live",
+            payload: { questionId: "none" },
+          });
+          setActionMessage("Manual launch sequence reset!");
+          setTimeout(() => setActionMessage(""), 2000);
+        } catch (err) {
+          console.error("Failed to reset manual launch:", err);
+        }
+      } else {
+        await handleSetQuestionLive(questions[currentIdx + 1].id);
+      }
+    }
   };
 
   const handleLaunchSelected = async () => {
@@ -321,6 +412,13 @@ export default function HostConsolePage() {
       if (activeSession.auth_mode === "quiz_gmail") {
         void reloadLeaderboard(activeSession.id);
       }
+      
+      try {
+        const attempted = await clientDb.getAttemptedParticipantsCount(activeSession.id);
+        setAttemptedCount(attempted);
+      } catch (e) {
+        console.error("Failed to load initial attempted count:", e);
+      }
 
       const dbQuestions = await clientDb.getQuestions(activeSession.id);
       setQuestions(dbQuestions);
@@ -394,6 +492,8 @@ export default function HostConsolePage() {
         if (currentSess) {
           void reloadLeaderboard(currentSess.id);
         }
+      } else if (event.type === "presence_count") {
+        setOnlineCount(event.payload.count);
       }
     });
 
@@ -425,6 +525,16 @@ export default function HostConsolePage() {
       });
       const uniqueParticipants = new Set(dbResponses.map((r) => r.participant_id)).size;
       setParticipantsCount(uniqueParticipants);
+
+      const currentSess = activeSessionRef.current;
+      if (currentSess) {
+        try {
+          const attempted = await clientDb.getAttemptedParticipantsCount(currentSess.id);
+          setAttemptedCount(attempted);
+        } catch (e) {
+          console.error("Failed to reload attempted count:", e);
+        }
+      }
     } catch (err) {
       // Background quiet fail
     }
@@ -657,9 +767,9 @@ export default function HostConsolePage() {
     const isQuiz = session?.auth_mode === "quiz_gmail";
     const headers = "QNo, Question, Question Type, Option1, Option2, Option3, Option4, Option5, Option6, Option7, Option8, Answer\n";
     const sample1 = isQuiz
-      ? "1, What is the capital of France?, QZ, Berlin, Paris, London, Rome,,,,,, 2\n"
-      : "1, Which UI frame do you prefer?, OP, Clean Cards, Glassmorphism Grid, Minimalist Row,,,,,,\n";
-    const sample2 = "2, Describe PulseBoard in one word, WC,,,,,,,,,,,\n";
+      ? "1, What is the capital of France?, QZ, Berlin, Paris, London, Rome,,,,, 2\n"
+      : "1, Which UI frame do you prefer?, OP, Clean Cards, Glassmorphism Grid, Minimalist Row,,,,,\n";
+    const sample2 = "2, Describe PulseBoard in one word, WC,,,,,,,,,\n";
     const csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent(headers + sample1 + sample2);
     
     const link = document.createElement("a");
@@ -946,7 +1056,11 @@ export default function HostConsolePage() {
               />
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-400">
                 <span className="flex items-center gap-1">
-                  Participants: <span className="font-extrabold text-slate-200 flex items-center gap-1"><UsersRound className="size-3.5 text-cyan-400" /> {participantsCount} online</span>
+                  Online: <span className="font-extrabold text-slate-200 flex items-center gap-1"><UsersRound className="size-3.5 text-cyan-400" /> {onlineCount} looked</span>
+                </span>
+                <span className="text-slate-700 hidden sm:inline">|</span>
+                <span className="flex items-center gap-1">
+                  Attempted: <span className="font-extrabold text-slate-200 flex items-center gap-1"><Radio className="size-3.5 text-emerald-400" /> {attemptedCount} unique</span>
                 </span>
                 <span className="text-slate-700 hidden sm:inline">|</span>
                 <span>
@@ -1300,10 +1414,20 @@ export default function HostConsolePage() {
                         onClick={handleLaunchSelected}
                         disabled={selectedQuestionIds.length === 0}
                         className="flex-1 min-w-[110px] h-10 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-40 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-500/10 animate-all duration-200"
-                        title="Launch Selected"
+                        title="Launch Selected Questions"
                       >
                         <Play className="size-3.5 text-slate-950" />
-                        Launch ({selectedQuestionIds.length})
+                        Launch Selected ({selectedQuestionIds.length})
+                      </Button>
+                      
+                      <Button
+                        type="button"
+                        onClick={handleManualLaunch}
+                        className="flex-1 min-w-[110px] h-10 bg-sky-500 hover:bg-sky-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-sky-500/10 animate-all duration-200"
+                        title="Manual Launch Sequence"
+                      >
+                        <Play className="size-3.5 text-slate-950" />
+                        {getManualLaunchButtonText()}
                       </Button>
                       
                       <Button
@@ -1314,6 +1438,19 @@ export default function HostConsolePage() {
                       >
                         <Radio className="size-3.5 animate-pulse text-slate-950" />
                         Launch All
+                      </Button>
+
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          setAutoLaunchError("");
+                          setShowAutoLaunchModal(true);
+                        }}
+                        className="flex-1 min-w-[110px] h-10 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-amber-500/10 animate-all duration-200"
+                        title="Auto-Launch timer settings"
+                      >
+                        <Radio className="size-3.5 animate-pulse text-slate-950" />
+                        Auto Launch
                       </Button>
 
                       <Button
@@ -1558,8 +1695,8 @@ export default function HostConsolePage() {
                         <YAxis
                           dataKey="name"
                           type="category"
-                          width={120}
-                          tick={{ fill: "#e2e8f0", fontSize: 13, fontWeight: "bold" }}
+                          width={160}
+                          tick={(props) => <CustomYAxisTick {...props} activeQuestion={activeQuestion} />}
                         />
                         <Tooltip
                           contentStyle={{
@@ -1577,6 +1714,12 @@ export default function HostConsolePage() {
                           animationDuration={500}
                           barSize={24}
                         >
+                          {chartData.map((entry, index) => {
+                            const isQuiz = activeQuestion?.correct_option !== null && activeQuestion?.correct_option !== undefined;
+                            const isCorrect = isQuiz && activeQuestion?.correct_option === index + 1;
+                            const barColor = isQuiz ? (isCorrect ? "#22c55e" : "#fca5a5") : "#06b6d4";
+                            return <Cell key={`cell-${index}`} fill={barColor} />;
+                          })}
                           <LabelList
                             dataKey="votes"
                             position="insideRight"
@@ -1736,6 +1879,80 @@ export default function HostConsolePage() {
           </section>
         )}
       </div>
+
+      {/* Auto-Launch Modal Dialog */}
+      <AnimatePresence>
+        {showAutoLaunchModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
+            onClick={() => setShowAutoLaunchModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              transition={{ type: "spring", duration: 0.4 }}
+              className="relative w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-slate-900/90 p-6 shadow-2xl backdrop-blur-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute -inset-px rounded-2xl bg-gradient-to-tr from-cyan-500/5 to-violet-500/5 opacity-30 pointer-events-none" />
+
+              <h2 className="text-xl font-black text-white relative z-10">
+                Trigger Auto Launch Timer
+              </h2>
+              <p className="mt-1 text-xs text-slate-400 relative z-10">
+                Specify a timer duration to auto-advance through all questions.
+              </p>
+
+              <form onSubmit={handleAutoLaunchSubmit} className="mt-5 space-y-4 relative z-10">
+                <div>
+                  <label htmlFor="modal-timer-seconds" className="mb-1.5 block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Timer Duration (10 - 300 seconds)
+                  </label>
+                  <Input
+                    type="number"
+                    id="modal-timer-seconds"
+                    name="modal-timer-seconds"
+                    required
+                    min={10}
+                    max={300}
+                    placeholder="e.g. 30"
+                    value={autoLaunchDuration}
+                    onChange={(e) => setAutoLaunchDuration(parseInt(e.target.value) || 0)}
+                    className="h-11 bg-slate-950/50 border-white/10 text-white placeholder-slate-500 focus:border-cyan-400 text-sm font-medium"
+                  />
+                  {autoLaunchError && (
+                    <p className="mt-2 text-[11px] font-bold text-rose-400 uppercase tracking-wider">
+                      {autoLaunchError}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-2.5 pt-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setShowAutoLaunchModal(false)}
+                    className="h-10 text-xs font-bold text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={autoLaunchDuration < 10 || autoLaunchDuration > 300}
+                    className="h-10 px-5 text-xs font-black uppercase tracking-wider bg-cyan-500 hover:bg-cyan-600 text-slate-950 shadow-lg shadow-cyan-500/10 cursor-pointer"
+                  >
+                    Start Auto-Launch
+                  </Button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </AppShell>
   );
 }

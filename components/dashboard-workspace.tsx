@@ -43,8 +43,6 @@ export function DashboardWorkspace({
   
   // Quiz configurations
   const [authMode, setAuthMode] = useState<"anonymous" | "gmail" | "quiz_gmail">("anonymous");
-  const [autoLaunch, setAutoLaunch] = useState(false);
-  const [timerSeconds, setTimerSeconds] = useState(30);
 
   const visibleSessions = useMemo(() => {
     return sessions.filter((session) =>
@@ -61,11 +59,9 @@ export function DashboardWorkspace({
     if (!trimmedName || trimmedName.toLowerCase() === "untitled session" || trimmedName.toLowerCase() === "untitled pulseroom" || loading) return;
     setLoading(true);
     try {
-      const created = await clientDb.createSession(userId, trimmedName, authMode, autoLaunch, autoLaunch ? timerSeconds : 0);
+      const created = await clientDb.createSession(userId, trimmedName, authMode, false, 0);
       setNewSessionName("");
       setAuthMode("anonymous");
-      setAutoLaunch(false);
-      setTimerSeconds(30);
       setShowCreateModal(false);
       router.push(`/session/${created.code}/host`);
     } catch (err) {
@@ -387,50 +383,6 @@ export function DashboardWorkspace({
                       <option value="quiz_gmail" className="bg-slate-900 text-white">Quiz with Gmail Login Mode</option>
                     </select>
                   </div>
-
-                  <div className="flex items-center justify-between border-t border-white/5 pt-4">
-                    <div>
-                      <label htmlFor="session-auto-launch" className="text-xs font-bold text-slate-200 uppercase tracking-wider block">
-                        Auto-Launch Timer
-                      </label>
-                      <span className="text-[10px] text-slate-400">
-                        Automatically start a countdown timer when questions go live
-                      </span>
-                    </div>
-                    <input
-                      type="checkbox"
-                      id="session-auto-launch"
-                      name="session-auto-launch"
-                      checked={autoLaunch}
-                      onChange={(e) => setAutoLaunch(e.target.checked)}
-                      className="size-5 rounded border-white/10 bg-slate-950 accent-cyan-400 cursor-pointer"
-                    />
-                  </div>
-
-                  <AnimatePresence>
-                    {autoLaunch && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="space-y-1.5 border-t border-white/5 pt-4 overflow-hidden"
-                      >
-                        <label htmlFor="session-timer-seconds" className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
-                          Timer Duration (Seconds)
-                        </label>
-                        <Input
-                          type="number"
-                          id="session-timer-seconds"
-                          name="session-timer-seconds"
-                          min={5}
-                          max={300}
-                          value={timerSeconds}
-                          onChange={(e) => setTimerSeconds(parseInt(e.target.value) || 30)}
-                          className="h-11 bg-slate-950/50 border-white/10 text-white placeholder-slate-500 focus:border-cyan-400 text-sm font-medium"
-                        />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
                 </div>
 
                 <div className="flex justify-end gap-2.5 pt-2">

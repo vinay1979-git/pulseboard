@@ -46,6 +46,9 @@ export async function POST(req: NextRequest) {
       case "updateSessionTitle":
         await db.updateSessionTitle(args.sessionId, args.title);
         return NextResponse.json({ success: true });
+      case "updateSessionAutoLaunch":
+        await db.updateSessionAutoLaunch(args.sessionId, args.autoLaunch, args.timerSeconds);
+        return NextResponse.json({ success: true });
       case "reorderQuestions":
         await db.reorderQuestions(args.sessionId, args.questionIds);
         return NextResponse.json({ success: true });
@@ -62,6 +65,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(await db.registerParticipant(args.sessionId, args.name, args.email));
       case "getParticipants":
         return NextResponse.json(await db.getParticipants(args.sessionId));
+      case "getAttemptedParticipantsCount":
+        return NextResponse.json(await db.getAttemptedParticipantsCount(args.sessionId));
       case "calculateScores":
         await db.calculateScores(args.questionId, args.correctOption);
         return NextResponse.json({ success: true });

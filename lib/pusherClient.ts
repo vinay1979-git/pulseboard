@@ -10,6 +10,7 @@ if (key && typeof window !== "undefined") {
     pusherClientInstance = new PusherClient(key, {
       cluster,
       forceTLS: true,
+      authEndpoint: "/api/pusher/auth",
     });
   } catch (e) {
     console.error("Failed to initialize Pusher Client SDK:", e);
