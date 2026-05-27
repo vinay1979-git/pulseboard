@@ -61,6 +61,7 @@ if (!globalForDb._pulseboardDb) {
         prompt_text: "Which feature should we prioritize for the Q3 release?",
         options: ["Real-time Dashboards", "Advanced Analytics", "Mobile Companion App", "Offline Synchronization"],
         is_live: true,
+        is_completed: false,
         created_at: new Date().toISOString(),
         order_index: 0,
       },
@@ -71,6 +72,7 @@ if (!globalForDb._pulseboardDb) {
         prompt_text: "Describe the current release sprint in one word!",
         options: [],
         is_live: false,
+        is_completed: false,
         created_at: new Date(Date.now() + 1000).toISOString(),
         order_index: 1,
       }
@@ -606,6 +608,7 @@ export async function createQuestion(
     prompt_text: sanitizedPrompt !== "" ? sanitizedPrompt : "Untitled Question",
     options: type === "multiple_choice" ? sanitizedOptions : [],
     is_live: false,
+    is_completed: false,
     created_at: new Date().toISOString(),
     order_index: nextOrderIndex,
     correct_option: correctOption || null,
@@ -681,7 +684,7 @@ export async function setQuestionLive(sessionId: string, questionId: string): Pr
       // Activate selected question
       const { error: error2 } = await supabase
         .from("questions")
-        .update({ is_live: true })
+        .update({ is_live: true, is_completed: false })
         .eq("id", questionId);
       
       if (error2) throw new Error(error2.message);
@@ -694,6 +697,9 @@ export async function setQuestionLive(sessionId: string, questionId: string): Pr
     db.questions.forEach(q => {
       if (q.session_id === sessionId) {
         q.is_live = (q.id === questionId);
+        if (q.id === questionId) {
+          q.is_completed = false;
+        }
       }
     });
   }
@@ -877,7 +883,7 @@ export async function setQuestionsLive(sessionId: string, questionIds: string[])
       // Activate selected questions
       const { error: error2 } = await supabase
         .from("questions")
-        .update({ is_live: true })
+        .update({ is_live: true, is_completed: false })
         .in("id", questionIds);
       
       if (error2) throw new Error(error2.message);
@@ -890,6 +896,9 @@ export async function setQuestionsLive(sessionId: string, questionIds: string[])
     db.questions.forEach(q => {
       if (q.session_id === sessionId) {
         q.is_live = questionIds.includes(q.id);
+        if (questionIds.includes(q.id)) {
+          q.is_completed = false;
+        }
       }
     });
   }
@@ -910,6 +919,50 @@ export async function setQuestionsLive(sessionId: string, questionIds: string[])
       await pusherServer.trigger(`session-${sessionCode}`, "questions-live", { questions: liveList });
     } catch (e) {
       console.error("Pusher setQuestionsLive trigger error:", e);
+    }
+  }
+}
+
+export async function markQuestionsCompleted(sessionId: string, questionIds: string[]): Promise<void> {
+  if (isSupabaseConfigured() && !isMockId(sessionId)) {
+    try {
+      const supabase = await createServerClient();
+      const { error } = await supabase
+        .from("questions")
+        .update({ is_live: false, is_completed: true })
+        .in("id", questionIds);
+      
+      if (error) throw error;
+    } catch (e: any) {
+      console.error("Supabase markQuestionsCompleted error:", e);
+      throw new Error(e.message || "Failed to mark questions completed");
+    }
+  } else {
+    // Local Mock Fallback
+    db.questions.forEach(q => {
+      if (q.session_id === sessionId && questionIds.includes(q.id)) {
+        q.is_live = false;
+        q.is_completed = true;
+      }
+    });
+  }
+
+  await touchSession(sessionId);
+
+  // Broadcast via Pusher
+  const sessionCode = await getSessionCodeById(sessionId);
+  if (sessionCode && pusherServer) {
+    try {
+      // Fetch all questions for this session to get full details of live questions
+      const allQuestions = isSupabaseConfigured()
+        ? await getQuestions(sessionId)
+        : db.questions.filter(q => q.session_id === sessionId);
+      
+      const liveList = allQuestions.filter(q => q.is_live);
+      
+      await pusherServer.trigger(`session-${sessionCode}`, "questions-live", { questions: liveList });
+    } catch (e) {
+      console.error("Pusher markQuestionsCompleted trigger error:", e);
     }
   }
 }
@@ -1229,6 +1282,7 @@ export async function bulkImportQuestions(sessionId: string, questionsList: any[
         prompt_text: sanitizeText(q.promptText),
         options: q.options,
         is_live: false,
+        is_completed: false,
         created_at: new Date().toISOString(),
         order_index: startIdx + idx,
         correct_option: q.correct_option || null,
@@ -1256,6 +1310,7 @@ export async function bulkImportQuestions(sessionId: string, questionsList: any[
         prompt_text: sanitizeText(q.promptText),
         options: q.options,
         is_live: false,
+        is_completed: false,
         created_at: new Date().toISOString(),
         order_index: startIdx + idx,
         correct_option: q.correct_option || null,

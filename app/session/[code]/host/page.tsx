@@ -26,6 +26,7 @@ import {
   ChevronUp,
   Trophy,
   Medal,
+  CheckCircle2,
 } from "lucide-react";
 import {
   BarChart,
@@ -106,6 +107,13 @@ export default function HostConsolePage() {
   const [showAutoLaunchModal, setShowAutoLaunchModal] = useState(false);
   const [autoLaunchDuration, setAutoLaunchDuration] = useState<number>(30);
   const [autoLaunchError, setAutoLaunchError] = useState("");
+  const [manualLaunchPointer, setManualLaunchPointer] = useState<number>(0);
+  const [isAutoLaunchPaused, setIsAutoLaunchPaused] = useState<boolean>(false);
+  const isAutoLaunchPausedRef = useRef(false);
+  
+  useEffect(() => {
+    isAutoLaunchPausedRef.current = isAutoLaunchPaused;
+  }, [isAutoLaunchPaused]);
 
   // Phase 3: Real-time Participant metrics
   const [onlineCount, setOnlineCount] = useState<number>(0);
@@ -118,6 +126,8 @@ export default function HostConsolePage() {
     const startIdx = (currentPage - 1) * questionsPerPage;
     return questions.slice(startIdx, startIdx + questionsPerPage);
   }, [questions, currentPage]);
+
+  const liveQuestionsList = useMemo(() => questions.filter((q) => q.is_live), [questions]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -206,42 +216,147 @@ export default function HostConsolePage() {
   };
 
   const getManualLaunchButtonText = () => {
-    if (!activeQuestion || questions.length === 0) return "Manual Launch";
-    const currentIdx = questions.findIndex(q => q.id === activeQuestion.id);
-    if (currentIdx === -1) return "Manual Launch";
+    if (questions.length === 0) return "Manual Launch";
+    if (manualLaunchPointer === questions.length) return "Complete PulseRoom";
+    
+    const currentLive = questions.find(q => q.is_live);
+    if (!currentLive && manualLaunchPointer === 0) return "Manual Launch";
+    
     return "Launch next";
   };
 
   const handleManualLaunch = async () => {
     if (questions.length === 0 || !session) return;
-    
-    if (!activeQuestion) {
-      await handleSetQuestionLive(questions[0].id);
-    } else {
-      const currentIdx = questions.findIndex(q => q.id === activeQuestion.id);
-      if (currentIdx === -1) {
-        await handleSetQuestionLive(questions[0].id);
-      } else if (currentIdx === questions.length - 1) {
-        try {
-          await clientDb.setQuestionsLive(session.id, []);
+
+    if (manualLaunchPointer === questions.length) {
+      // "Complete PulseRoom" action
+      try {
+        const liveQuestionIds = questions.filter(q => q.is_live).map(q => q.id);
+        if (liveQuestionIds.length > 0) {
+          await clientDb.markQuestionsCompleted(session.id, liveQuestionIds);
           setQuestions((current) =>
-            current.map((q) => ({ ...q, is_live: false }))
+            current.map((q) => liveQuestionIds.includes(q.id) ? { ...q, is_live: false, is_completed: true } : q)
           );
-          setActiveQuestion(null);
-          setResponses([]);
-          setParticipantsCount(0);
-          await broadcastSessionEvent(code, {
-            type: "question_live",
-            payload: { questionId: "none" },
-          });
-          setActionMessage("Manual launch sequence reset!");
-          setTimeout(() => setActionMessage(""), 2000);
-        } catch (err) {
-          console.error("Failed to reset manual launch:", err);
         }
-      } else {
-        await handleSetQuestionLive(questions[currentIdx + 1].id);
+        setActiveQuestion(null);
+        setResponses([]);
+        setParticipantsCount(0);
+        setManualLaunchPointer(0);
+        setActionMessage("PulseRoom sequence completed!");
+        setTimeout(() => setActionMessage(""), 2000);
+      } catch (err) {
+        console.error("Failed to complete PulseRoom:", err);
       }
+      return;
+    }
+
+    // "Launch Next" or "Manual Launch" action
+    try {
+      const prevLiveQuestions = questions.filter(q => q.is_live);
+      const prevLiveIds = prevLiveQuestions.map(q => q.id);
+      
+      // 1. Mark previously live questions as completed
+      if (prevLiveIds.length > 0) {
+        await clientDb.markQuestionsCompleted(session.id, prevLiveIds);
+      }
+
+      // 2. Launch the question at manualLaunchPointer
+      const targetQuestion = questions[manualLaunchPointer];
+      if (targetQuestion) {
+        await handleSetQuestionLive(targetQuestion.id);
+        
+        // Optimistically set status locally
+        setQuestions((current) =>
+          current.map((q) => {
+            if (q.id === targetQuestion.id) {
+              return { ...q, is_live: true, is_completed: false };
+            }
+            if (prevLiveIds.includes(q.id)) {
+              return { ...q, is_live: false, is_completed: true };
+            }
+            return q;
+          })
+        );
+        
+        // Increment pointer
+        setManualLaunchPointer((prev) => prev + 1);
+      }
+    } catch (err) {
+      console.error("Manual launch sequence failed:", err);
+    }
+  };
+
+  const handleMarkCompleted = async () => {
+    if (!session) return;
+    const liveQuestionIds = questions.filter(q => q.is_live).map(q => q.id);
+    if (liveQuestionIds.length === 0) return;
+    try {
+      await clientDb.markQuestionsCompleted(session.id, liveQuestionIds);
+      setQuestions((current) =>
+        current.map((q) => liveQuestionIds.includes(q.id) ? { ...q, is_live: false, is_completed: true } : q)
+      );
+      
+      setActiveQuestion((current) => current && liveQuestionIds.includes(current.id) ? { ...current, is_live: false, is_completed: true } : current);
+      
+      setActionMessage("Questions marked completed!");
+      setTimeout(() => setActionMessage(""), 2000);
+    } catch (err) {
+      console.error("Failed to mark completed:", err);
+    }
+  };
+
+  const handleTogglePauseAutoLaunch = async () => {
+    if (!session || !activeQuestion) return;
+    const nextPaused = !isAutoLaunchPaused;
+    setIsAutoLaunchPaused(nextPaused);
+
+    try {
+      if (nextPaused) {
+        // Pause Broadcast
+        await broadcastSessionEvent(code, {
+          type: "questions_timer_pause",
+          payload: { questionId: activeQuestion.id },
+        });
+        setActionMessage("Auto-launch timer PAUSED");
+      } else {
+        // Resume Broadcast
+        await broadcastSessionEvent(code, {
+          type: "questions_timer_resume",
+          payload: { questionId: activeQuestion.id, duration: timerSecondsLeft || 0 },
+        });
+        setActionMessage("Auto-launch timer RESUMED");
+      }
+      setTimeout(() => setActionMessage(""), 2000);
+    } catch (err) {
+      console.error("Failed to toggle pause:", err);
+    }
+  };
+
+  const handleCancelAutoLaunch = async () => {
+    if (!session) return;
+    try {
+      // 1. Reset auto launch configuration in DB
+      await clientDb.updateSessionAutoLaunch(session.id, false, 0);
+      setSession(current => current ? { ...current, auto_launch: false, timer_seconds: 0 } : null);
+
+      // 2. Clear any local interval
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      setTimerSecondsLeft(null);
+      setIsAutoLaunchPaused(false);
+
+      // 3. Broadcast timer cancel/pause event to participants
+      await broadcastSessionEvent(code, {
+        type: "questions_timer_pause",
+        payload: { questionId: activeQuestion?.id || "none" },
+      });
+
+      setActionMessage("Auto-launch loop cancelled!");
+      setTimeout(() => setActionMessage(""), 2000);
+    } catch (err) {
+      console.error("Failed to cancel auto launch:", err);
     }
   };
 
@@ -251,7 +366,11 @@ export default function HostConsolePage() {
       await clientDb.setQuestionsLive(session.id, selectedQuestionIds);
       
       setQuestions((current) =>
-        current.map((q) => ({ ...q, is_live: selectedQuestionIds.includes(q.id) }))
+        current.map((q) => ({ 
+          ...q, 
+          is_live: selectedQuestionIds.includes(q.id),
+          is_completed: selectedQuestionIds.includes(q.id) ? false : q.is_completed
+        }))
       );
 
       // Focus on the first of the active questions
@@ -265,6 +384,10 @@ export default function HostConsolePage() {
       setSelectedQuestionIds([]);
 
       if (target) {
+        const targetIdx = questions.findIndex(q => q.id === target.id);
+        if (targetIdx !== -1) {
+          setManualLaunchPointer(targetIdx + 1);
+        }
         void reloadResponses(target.id);
       }
 
@@ -282,7 +405,7 @@ export default function HostConsolePage() {
       await clientDb.setQuestionsLive(session.id, allQuestionIds);
       
       setQuestions((current) =>
-        current.map((q) => ({ ...q, is_live: true }))
+        current.map((q) => ({ ...q, is_live: true, is_completed: false }))
       );
 
       // Focus on the first question
@@ -293,6 +416,8 @@ export default function HostConsolePage() {
 
       // Reset selection checkbox array
       setSelectedQuestionIds([]);
+
+      setManualLaunchPointer(1);
 
       if (target) {
         void reloadResponses(target.id);
@@ -439,6 +564,10 @@ export default function HostConsolePage() {
       setActiveQuestion(currentLive ?? null);
 
       if (currentLive) {
+        const liveIdx = dbQuestions.findIndex(q => q.id === currentLive.id);
+        if (liveIdx !== -1) {
+          setManualLaunchPointer(liveIdx + 1);
+        }
         const dbResponses = await clientDb.getResponses(currentLive.id);
         setResponses(dbResponses);
 
@@ -627,7 +756,11 @@ export default function HostConsolePage() {
       await clientDb.setQuestionLive(session.id, questionId);
       
       setQuestions((current) =>
-        current.map((q) => ({ ...q, is_live: q.id === questionId }))
+        current.map((q) => ({ 
+          ...q, 
+          is_live: q.id === questionId,
+          is_completed: q.id === questionId ? false : q.is_completed
+        }))
       );
 
       const target = questions.find((q) => q.id === questionId) || null;
@@ -641,6 +774,10 @@ export default function HostConsolePage() {
       });
 
       if (target) {
+        const targetIdx = questions.findIndex(q => q.id === target.id);
+        if (targetIdx !== -1) {
+          setManualLaunchPointer(targetIdx + 1);
+        }
         void reloadResponses(questionId);
       }
 
@@ -660,6 +797,9 @@ export default function HostConsolePage() {
 
         let timeLeft = duration;
         timerIntervalRef.current = setInterval(async () => {
+          if (isAutoLaunchPausedRef.current) {
+            return;
+          }
           timeLeft -= 1;
           setTimerSecondsLeft(timeLeft);
           
@@ -1409,16 +1549,80 @@ export default function HostConsolePage() {
                 {questions.length > 0 && (
                   <div className="sticky top-0 z-10 bg-[#0f172a]/95 backdrop-blur-md border-b border-white/5 pb-3 mb-3 pt-1">
                     <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        onClick={handleLaunchSelected}
-                        disabled={selectedQuestionIds.length === 0}
-                        className="flex-1 min-w-[110px] h-10 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-40 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-500/10 animate-all duration-200"
-                        title="Launch Selected Questions"
-                      >
-                        <Play className="size-3.5 text-slate-950" />
-                        Launch Selected ({selectedQuestionIds.length})
-                      </Button>
+                      {liveQuestionsList.length > 0 ? (
+                        session?.auto_launch ? (
+                          <>
+                            <Button
+                              type="button"
+                              onClick={handleTogglePauseAutoLaunch}
+                              className={`flex-1 min-w-[110px] h-10 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg animate-all duration-200 ${
+                                isAutoLaunchPaused
+                                  ? "bg-emerald-500 hover:bg-emerald-600 text-slate-950 shadow-emerald-500/10"
+                                  : "bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-amber-500/10"
+                              }`}
+                              title={isAutoLaunchPaused ? "Resume Auto-Launch Timer" : "Pause Auto-Launch Timer"}
+                            >
+                              <Play className="size-3.5 text-slate-950" />
+                              {isAutoLaunchPaused ? "Resume" : "Pause"}
+                            </Button>
+                            <Button
+                              type="button"
+                              onClick={handleCancelAutoLaunch}
+                              className="flex-1 min-w-[110px] h-10 bg-red-500 hover:bg-red-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-red-500/10 animate-all duration-200"
+                              title="Cancel Auto-Launch"
+                            >
+                              <X className="size-3.5 text-slate-950" />
+                              Cancel Auto-Launch
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            type="button"
+                            onClick={handleMarkCompleted}
+                            className="flex-1 min-w-[130px] h-10 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/10 animate-all duration-200"
+                            title="Mark Completed"
+                          >
+                            <CheckCircle2 className="size-3.5 text-slate-950" />
+                            Mark Completed ({liveQuestionsList.length})
+                          </Button>
+                        )
+                      ) : (
+                        <>
+                          <Button
+                            type="button"
+                            onClick={handleLaunchSelected}
+                            disabled={selectedQuestionIds.length === 0}
+                            className="flex-1 min-w-[110px] h-10 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-40 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-500/10 animate-all duration-200"
+                            title="Launch Selected Questions"
+                          >
+                            <Play className="size-3.5 text-slate-950" />
+                            Launch Selected ({selectedQuestionIds.length})
+                          </Button>
+                          
+                          <Button
+                            type="button"
+                            onClick={handleLaunchAll}
+                            className="flex-1 min-w-[110px] h-10 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/10 animate-all duration-200"
+                            title="Launch All Questions"
+                          >
+                            <Radio className="size-3.5 animate-pulse text-slate-950" />
+                            Launch All
+                          </Button>
+
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              setAutoLaunchError("");
+                              setShowAutoLaunchModal(true);
+                            }}
+                            className="flex-1 min-w-[110px] h-10 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-amber-500/10 animate-all duration-200"
+                            title="Auto-Launch timer settings"
+                          >
+                            <Radio className="size-3.5 animate-pulse text-slate-950" />
+                            Auto Launch
+                          </Button>
+                        </>
+                      )}
                       
                       <Button
                         type="button"
@@ -1428,29 +1632,6 @@ export default function HostConsolePage() {
                       >
                         <Play className="size-3.5 text-slate-950" />
                         {getManualLaunchButtonText()}
-                      </Button>
-                      
-                      <Button
-                        type="button"
-                        onClick={handleLaunchAll}
-                        className="flex-1 min-w-[110px] h-10 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/10 animate-all duration-200"
-                        title="Launch All Questions"
-                      >
-                        <Radio className="size-3.5 animate-pulse text-slate-950" />
-                        Launch All
-                      </Button>
-
-                      <Button
-                        type="button"
-                        onClick={() => {
-                          setAutoLaunchError("");
-                          setShowAutoLaunchModal(true);
-                        }}
-                        className="flex-1 min-w-[110px] h-10 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-amber-500/10 animate-all duration-200"
-                        title="Auto-Launch timer settings"
-                      >
-                        <Radio className="size-3.5 animate-pulse text-slate-950" />
-                        Auto Launch
                       </Button>
 
                       <Button
@@ -1481,6 +1662,7 @@ export default function HostConsolePage() {
                           key={q.id}
                           onClick={() => {
                             setActiveQuestion(q);
+                            setManualLaunchPointer(globalIndex);
                             void reloadResponses(q.id);
                           }}
                           className={`p-3 rounded-xl border flex flex-col gap-2 transition-all duration-200 cursor-pointer hover:bg-slate-800 ${
@@ -1516,6 +1698,11 @@ export default function HostConsolePage() {
                                   {q.is_live ? (
                                     <span className="inline-block rounded-[4px] text-[9px] font-black px-2 py-0.5 uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse">
                                       LIVE
+                                    </span>
+                                  ) : q.is_completed ? (
+                                    <span className="inline-block rounded-[4px] text-[9px] font-extrabold px-2 py-0.5 uppercase tracking-wider bg-slate-700/60 text-slate-400 border border-white/5 flex items-center gap-1">
+                                      <CheckCircle2 className="size-2.5 text-slate-500" />
+                                      Done
                                     </span>
                                   ) : (questionResponseCounts[q.id] || 0) > 0 ? (
                                     <span className="inline-block rounded-[4px] text-[9px] font-extrabold px-2 py-0.5 uppercase tracking-wider bg-slate-700/50 text-slate-300 border border-white/5">

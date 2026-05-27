@@ -159,6 +159,28 @@ export default function SessionAudiencePage() {
             }
           }
         }, 1000);
+      } else if (event.type === "questions_timer_pause") {
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+          timerIntervalRef.current = null;
+        }
+      } else if (event.type === "questions_timer_resume") {
+        const { duration } = event.payload;
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+        }
+        setTimerSecondsLeft(duration);
+        let timeLeft = duration;
+        timerIntervalRef.current = setInterval(() => {
+          timeLeft -= 1;
+          setTimerSecondsLeft(timeLeft);
+          if (timeLeft <= 0) {
+            if (timerIntervalRef.current) {
+              clearInterval(timerIntervalRef.current);
+              timerIntervalRef.current = null;
+            }
+          }
+        }, 1000);
       } else if (event.type === "session_status") {
         setSessionStatus(event.payload.status);
         if (event.payload.status === "inactive") {

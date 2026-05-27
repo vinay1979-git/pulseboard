@@ -31,6 +31,7 @@ export interface Question {
   prompt_text: string;
   options: string[]; // Options for multiple choice (empty for word cloud)
   is_live: boolean;
+  is_completed?: boolean;
   created_at: string;
   updated_at?: string | null;
   order_index: number;

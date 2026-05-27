@@ -7,6 +7,8 @@ export interface RealtimeEvent {
     | "session_status"
     | "responses_reset"
     | "questions_timer_start"
+    | "questions_timer_pause"
+    | "questions_timer_resume"
     | "leaderboard_updated"
     | "leaderboard-updated"
     | "presence_count";

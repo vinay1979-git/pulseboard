@@ -181,6 +181,26 @@ async function runTests() {
       "calculateScores successfully increments the score of correct respondents by 10 points."
     );
 
+    // Test 15: Questions created have is_completed === false by default, and markQuestionsCompleted transitions statuses correctly
+    const q3 = await apiCall("createQuestion", {
+      sessionId: newSession.id,
+      type: "multiple_choice",
+      promptText: "Test Question 3 (Default Completed Check)",
+      options: ["A", "B"]
+    });
+    assert(q3.is_completed === false, "createQuestion creates questions with is_completed: false by default.");
+
+    await apiCall("markQuestionsCompleted", { sessionId: newSession.id, questionIds: [q3.id] });
+    const questionsAfterCompleted = await apiCall("getQuestions", { sessionId: newSession.id });
+    const targetQ3 = questionsAfterCompleted.find(q => q.id === q3.id);
+    assert(targetQ3.is_live === false && targetQ3.is_completed === true, "markQuestionsCompleted correctly marks the question as completed (is_completed: true, is_live: false).");
+
+    // Test 16: Launching a completed question resets is_completed back to false
+    await apiCall("setQuestionLive", { sessionId: newSession.id, questionId: q3.id });
+    const questionsAfterLive = await apiCall("getQuestions", { sessionId: newSession.id });
+    const targetQ3Live = questionsAfterLive.find(q => q.id === q3.id);
+    assert(targetQ3Live.is_live === true && targetQ3Live.is_completed === false, "setQuestionLive resets the completed status of the activated question back to is_completed: false.");
+
   } catch (err) {
     console.error("💥 Test suite encountered fatal error:", err);
     failed++;

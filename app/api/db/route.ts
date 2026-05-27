@@ -43,6 +43,9 @@ export async function POST(req: NextRequest) {
       case "setQuestionsLive":
         await db.setQuestionsLive(args.sessionId, args.questionIds);
         return NextResponse.json({ success: true });
+      case "markQuestionsCompleted":
+        await db.markQuestionsCompleted(args.sessionId, args.questionIds);
+        return NextResponse.json({ success: true });
       case "updateSessionTitle":
         await db.updateSessionTitle(args.sessionId, args.title);
         return NextResponse.json({ success: true });

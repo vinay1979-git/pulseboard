@@ -91,6 +91,10 @@ export async function setQuestionsLive(sessionId: string, questionIds: string[])
   return apiCall("setQuestionsLive", { sessionId, questionIds });
 }
 
+export async function markQuestionsCompleted(sessionId: string, questionIds: string[]): Promise<void> {
+  return apiCall("markQuestionsCompleted", { sessionId, questionIds });
+}
+
 export async function updateSessionTitle(sessionId: string, title: string): Promise<void> {
   return apiCall("updateSessionTitle", { sessionId, title });
 }
