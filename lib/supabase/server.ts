@@ -58,20 +58,24 @@ export async function createClient() {
         name: "Vinay Visvanathan"
       }
     };
-    client.auth = {
-      getUser: async () => {
-        return { data: { user: mockUser }, error: null };
+    Object.defineProperty(client, "auth", {
+      value: {
+        getUser: async () => {
+          return { data: { user: mockUser }, error: null };
+        },
+        getSession: async () => {
+          return { data: { session: { user: mockUser } }, error: null };
+        },
+        signOut: async () => {
+          return { error: null };
+        },
+        onAuthStateChange: () => {
+          return { data: { subscription: { unsubscribe: () => {} } } };
+        }
       },
-      getSession: async () => {
-        return { data: { session: { user: mockUser } }, error: null };
-      },
-      signOut: async () => {
-        return { error: null };
-      },
-      onAuthStateChange: () => {
-        return { data: { subscription: { unsubscribe: () => {} } } };
-      }
-    } as any;
+      writable: true,
+      configurable: true
+    });
   }
 
   return client;

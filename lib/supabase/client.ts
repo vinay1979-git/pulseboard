@@ -52,32 +52,37 @@ export function createClient() {
         name: "Vinay Visvanathan"
       }
     };
-    client.auth = {
-      getUser: async () => {
-        return { data: { user: mockUser }, error: null };
-      },
-      getSession: async () => {
-        return { data: { session: { user: mockUser } }, error: null };
-      },
-      signInWithPassword: async () => {
-        return { data: { session: { user: mockUser } }, error: null };
-      },
-      signUp: async () => {
-        return { data: { session: { user: mockUser } }, error: null };
-      },
-      signInWithOAuth: async () => {
-        if (typeof window !== "undefined") {
-          window.location.href = "/dashboard";
+    Object.defineProperty(client, "auth", {
+      value: {
+        getUser: async () => {
+          return { data: { user: mockUser }, error: null };
+        },
+        getSession: async () => {
+          return { data: { session: { user: mockUser } }, error: null };
+        },
+        signInWithPassword: async () => {
+          return { data: { session: { user: mockUser } }, error: null };
+        },
+        signUp: async () => {
+          return { data: { session: { user: mockUser } }, error: null };
+        },
+        signInWithOAuth: async () => {
+          console.log("[mock signInWithOAuth] Redirecting to /dashboard");
+          if (typeof window !== "undefined") {
+            window.location.href = "/dashboard";
+          }
+          return { error: null };
+        },
+        signOut: async () => {
+          return { error: null };
+        },
+        onAuthStateChange: () => {
+          return { data: { subscription: { unsubscribe: () => {} } } };
         }
-        return { error: null };
       },
-      signOut: async () => {
-        return { error: null };
-      },
-      onAuthStateChange: () => {
-        return { data: { subscription: { unsubscribe: () => {} } } };
-      }
-    } as any;
+      writable: true,
+      configurable: true
+    });
   }
 
   return client;
