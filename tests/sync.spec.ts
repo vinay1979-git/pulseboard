@@ -49,7 +49,7 @@ test.describe("Multi-Browser Host & Participant Sync E2E Tests", () => {
     
     // Verify participant successfully reaches the waiting lobby
     await audiencePage.waitForURL(new RegExp(`/session/${code}$`));
-    await expect(audiencePage.locator("text=Waiting for presenter to launch a question")).toBeVisible();
+    await expect(audiencePage.locator("text=Connected to Lobby")).toBeVisible();
 
     // 3. Presenter Launches the Question Manually
     await presenterPage.click('button:has-text("Start Manual")');

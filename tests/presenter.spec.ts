@@ -64,7 +64,7 @@ test.describe("Presenter Console State Machine E2E Tests", () => {
     await expect(page.locator("text=LIVE: Q2")).toBeVisible();
     
     // End Manual Sequence
-    await page.click('button:has-text("Finish")');
+    await page.click('button:has-text("End & Complete")');
     
     // Verify return to Idle State
     await expect(page.locator('button:has-text("Start Manual")')).toBeVisible();
