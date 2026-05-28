@@ -261,7 +261,7 @@ export function subscribeToSession(
 
       console.log(`[realtime pollState] code=${sessionCode} stateString=${stateString} lastStateString=${lastStateString}`);
 
-      if (lastStateString !== "" && lastStateString !== stateString) {
+      if (lastStateString !== stateString) {
         console.log(`[realtime pollState] State changed! Triggering UI update event.`);
         // Trigger a generic update event to wake up the subscriber UI
         onEvent({
@@ -275,11 +275,12 @@ export function subscribeToSession(
     }
   };
 
-  // Poll state every 1.5 seconds for multi-device sync
+  // Poll state every 1.5 seconds (or 500ms in test mode) for multi-device sync
   if (typeof window !== "undefined") {
+    const isTestMode = process.env.NEXT_PUBLIC_TEST_MODE === "true";
     pollInterval = setInterval(() => {
       void pollState();
-    }, 1500);
+    }, isTestMode ? 500 : 1500);
   }
 
   return {
