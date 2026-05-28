@@ -27,6 +27,16 @@ test.describe("Presenter Console State Machine E2E Tests", () => {
     const code = hostUrl.split("/session/")[1].split("/host")[0];
     console.log(`[E2E] Created Presenter Room: ${code}`);
 
+    // Add Question 1 (MC option is chosen by default)
+    await page.fill("#prompt", "Playwright E2E Prompt 1");
+    await page.click('button:has-text("Save to PulseRoom Stack")');
+    await expect(page.locator("text=Playwright E2E Prompt 1")).toBeVisible();
+
+    // Add Question 2
+    await page.fill("#prompt", "Playwright E2E Prompt 2");
+    await page.click('button:has-text("Save to PulseRoom Stack")');
+    await expect(page.locator("text=Playwright E2E Prompt 2")).toBeVisible();
+
     // State A: Inactive Room Gating
     // Verify toolbar controls are hidden/disabled and activation prompt is displayed
     await expect(page.locator("text=Activate the PulseRoom to enable launch controls.")).toBeVisible();
@@ -40,16 +50,6 @@ test.describe("Presenter Console State Machine E2E Tests", () => {
     // Verify Idle State controls are now fully exposed
     await expect(page.locator('button:has-text("Start Manual")')).toBeVisible();
     await expect(page.locator('button:has-text("Auto-Launch")')).toBeVisible();
-
-    // Add Question 1 (MC option is chosen by default)
-    await page.fill("#prompt", "Playwright E2E Prompt 1");
-    await page.click('button:has-text("Save to PulseRoom Stack")');
-    await expect(page.locator("text=Playwright E2E Prompt 1")).toBeVisible();
-
-    // Add Question 2
-    await page.fill("#prompt", "Playwright E2E Prompt 2");
-    await page.click('button:has-text("Save to PulseRoom Stack")');
-    await expect(page.locator("text=Playwright E2E Prompt 2")).toBeVisible();
 
     // State B: Idle to Manual Transition
     await page.click('button:has-text("Start Manual")');

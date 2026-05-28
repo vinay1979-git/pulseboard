@@ -32,7 +32,7 @@ test.describe("Multi-Browser Host & Participant Sync E2E Tests", () => {
 
     // Add a Multiple Choice Question with correct Option 1 (index 0)
     await presenterPage.fill("#prompt", "Playwright Sync MC Question");
-    await presenterPage.selectOption("#correct-option-select", "0");
+    await presenterPage.selectOption("#correct-option-select", "1");
     await presenterPage.click('button:has-text("Save to PulseRoom Stack")');
     await expect(presenterPage.locator("text=Playwright Sync MC Question")).toBeVisible();
 
