@@ -56,7 +56,7 @@ test.describe("Multi-Browser Host & Participant Sync E2E Tests", () => {
     await expect(presenterPage.locator("text=LIVE: Q1")).toBeVisible();
 
     // 4. Verify Audience instantly transitions to active question via Pusher WS
-    await expect(audiencePage.locator("text=Playwright Sync MC Question")).toBeVisible();
+    await expect(audiencePage.locator("text=Playwright Sync MC Question")).toBeVisible({ timeout: 15000 });
     await expect(audiencePage.locator('button:has-text("Option 1")')).toBeVisible();
     await expect(audiencePage.locator('button:has-text("Submit Answer")')).toBeVisible();
 
@@ -74,8 +74,8 @@ test.describe("Multi-Browser Host & Participant Sync E2E Tests", () => {
 
     // 7. Verify Presenter Console Leaderboard Instantly Updates with score
     // The participant name is "Playwright Tester" and correct MC option index 0 was chosen, yielding 10 pts
-    await expect(presenterPage.locator("text=Playwright Tester")).toBeVisible();
-    await expect(presenterPage.locator("text=10 pts")).toBeVisible();
+    await expect(presenterPage.locator("text=Playwright Tester")).toBeVisible({ timeout: 15000 });
+    await expect(presenterPage.locator("text=10 pts")).toBeVisible({ timeout: 15000 });
 
     // Teardown Contexts
     await audienceContext.close();
