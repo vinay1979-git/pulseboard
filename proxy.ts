@@ -53,7 +53,7 @@ export async function proxy(request: NextRequest) {
   
   if (process.env.NEXT_PUBLIC_TEST_MODE === "true") {
     const mockUser = {
-      id: "bdfa145b-730c-41e4-a5b2-d9f81f7979f8",
+      id: "49e19be3-1163-4fc9-b790-717a65f9ec82",
       email: "vinay1979@gmail.com",
       user_metadata: {
         full_name: "Vinay Visvanathan",
