@@ -2,6 +2,10 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Presenter Console State Machine E2E Tests", () => {
   test("Verify 4-state UI Launch Toolbar and Active Gating", async ({ page }) => {
+    // Catch browser errors and console logs
+    page.on("console", (msg) => console.log(`[Browser Log] ${msg.text()}`));
+    page.on("pageerror", (err) => console.log(`[Browser Error] ${err.message}`));
+
     // 1. Authenticate Presenter (Test Mode Bypass)
     await page.goto("/login");
     await page.click('button:has-text("Continue with Google")');
