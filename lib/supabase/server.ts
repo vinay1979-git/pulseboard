@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { getSupabaseKey, getSupabaseUrl, isSupabaseConfigured } from "@/lib/env";
 
 export async function createClient() {
-  if (!isSupabaseConfigured()) {
+  if (!isSupabaseConfigured() || process.env.NEXT_PUBLIC_TEST_MODE === "true") {
     // Return a mock client that satisfies the auth.getUser() calls safely
     return {
       auth: {

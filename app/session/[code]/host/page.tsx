@@ -27,6 +27,7 @@ import {
   Trophy,
   Medal,
   CheckCircle2,
+  Clock,
 } from "lucide-react";
 import {
   BarChart,
@@ -110,6 +111,8 @@ export default function HostConsolePage() {
   const [manualLaunchPointer, setManualLaunchPointer] = useState<number>(0);
   const [isAutoLaunchPaused, setIsAutoLaunchPaused] = useState<boolean>(false);
   const isAutoLaunchPausedRef = useRef(false);
+  const [consoleMode, setConsoleMode] = useState<'idle' | 'manual' | 'auto' | 'bulk'>('idle');
+  const [isAutoLaunchConfigExpanded, setIsAutoLaunchConfigExpanded] = useState<boolean>(false);
   
   useEffect(() => {
     isAutoLaunchPausedRef.current = isAutoLaunchPaused;
@@ -152,6 +155,7 @@ export default function HostConsolePage() {
   const [mcOptions, setMcOptions] = useState<string[]>(["Option 1", "Option 2"]);
   const [correctOption, setCorrectOption] = useState<number | null>(null);
   const [timerSecondsLeft, setTimerSecondsLeft] = useState<number | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number>(0);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const getAudienceUrl = () => {
@@ -193,21 +197,22 @@ export default function HostConsolePage() {
     e.preventDefault();
     if (!session || questions.length === 0) return;
     
-    if (autoLaunchDuration < 10 || autoLaunchDuration > 300) {
+    const parsedDuration = parseInt(autoLaunchDuration as any, 10) || 0;
+    if (parsedDuration < 10 || parsedDuration > 300) {
       setAutoLaunchError("Timer duration must be between 10 and 300 seconds.");
       return;
     }
     
     setAutoLaunchError("");
     try {
-      await clientDb.updateSessionAutoLaunch(session.id, true, autoLaunchDuration);
+      await clientDb.updateSessionAutoLaunch(session.id, true, parsedDuration);
       
-      setSession(current => current ? { ...current, auto_launch: true, timer_seconds: autoLaunchDuration } : null);
+      setSession(current => current ? { ...current, auto_launch: true, timer_seconds: parsedDuration } : null);
       setShowAutoLaunchModal(false);
       
       await handleSetQuestionLive(questions[0].id);
       
-      setActionMessage(`Auto-launch loop successfully triggered with ${autoLaunchDuration}s timer!`);
+      setActionMessage(`Auto-launch loop successfully triggered with ${parsedDuration}s timer!`);
       setTimeout(() => setActionMessage(""), 3000);
     } catch (err: any) {
       console.error("Auto launch failed:", err);
@@ -223,6 +228,106 @@ export default function HostConsolePage() {
     if (!currentLive && manualLaunchPointer === 0) return "Manual Launch";
     
     return "Launch next";
+  };
+
+  const handleStartManual = async () => {
+    if (questions.length === 0 || !session) return;
+    try {
+      setConsoleMode("manual");
+      await handleSetQuestionLive(questions[0].id);
+      setManualLaunchPointer(1);
+    } catch (err) {
+      console.error("Failed to start manual sequence:", err);
+    }
+  };
+
+  const handleStartAutoLaunch = async () => {
+    if (!session || questions.length === 0) return;
+    
+    const parsedDuration = parseInt(autoLaunchDuration as any, 10) || 0;
+    if (parsedDuration < 10 || parsedDuration > 300) {
+      setActionMessage("Timer must be between 10 and 300s.");
+      setTimeout(() => setActionMessage(""), 3000);
+      return;
+    }
+    
+    try {
+      await clientDb.updateSessionAutoLaunch(session.id, true, parsedDuration);
+      setSession(current => current ? { ...current, auto_launch: true, timer_seconds: parsedDuration } : null);
+      
+      setIsAutoLaunchConfigExpanded(false);
+      setConsoleMode("auto");
+      
+      await handleSetQuestionLive(questions[0].id);
+      
+      setActionMessage(`Auto-launch loop successfully triggered with ${parsedDuration}s timer!`);
+      setTimeout(() => setActionMessage(""), 3000);
+    } catch (err: any) {
+      console.error("Auto launch failed:", err);
+      setActionMessage(err.message || "Failed to configure auto launch.");
+      setTimeout(() => setActionMessage(""), 3000);
+    }
+  };
+
+  const handleEndAndCompleteManual = async () => {
+    try {
+      await handleMarkCompleted();
+      setConsoleMode("idle");
+      setManualLaunchPointer(0);
+    } catch (err) {
+      console.error("Failed to end manual mode:", err);
+    }
+  };
+
+  const handleSkipAutoLaunch = async () => {
+    if (!session || !activeQuestion) return;
+    try {
+      const currentQId = activeQuestion.id;
+      
+      // 1. Clear timer
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      
+      // 2. Mark completed in DB
+      await clientDb.markQuestionsCompleted(session.id, [currentQId]);
+      setQuestions((current) =>
+        current.map((q) => q.id === currentQId ? { ...q, is_live: false, is_completed: true } : q)
+      );
+
+      // 3. Launch next or complete
+      const latestQuestions = [...questions];
+      const currentIdx = latestQuestions.findIndex(q => q.id === currentQId);
+      if (currentIdx !== -1 && currentIdx + 1 < latestQuestions.length) {
+        const nextQ = latestQuestions[currentIdx + 1];
+        await handleSetQuestionLive(nextQ.id);
+      } else {
+        // Reset session auto launch configuration in DB
+        await clientDb.updateSessionAutoLaunch(session.id, false, 0);
+        setSession(current => current ? { ...current, auto_launch: false, timer_seconds: 0 } : null);
+        
+        setTimerSecondsLeft(null);
+        setTimeLeft(0);
+        setIsAutoLaunchPaused(false);
+        setActiveQuestion(null);
+        setConsoleMode("idle");
+        setActionMessage("Auto-launch sequence finished!");
+        setTimeout(() => setActionMessage(""), 3000);
+      }
+    } catch (err) {
+      console.error("Failed to skip auto launch:", err);
+    }
+  };
+
+  const handleMarkAllBulkCompleted = async () => {
+    try {
+      await handleMarkCompleted();
+      setConsoleMode("idle");
+      setManualLaunchPointer(0);
+    } catch (err) {
+      console.error("Failed to complete bulk mode:", err);
+    }
   };
 
   const handleManualLaunch = async () => {
@@ -242,6 +347,7 @@ export default function HostConsolePage() {
         setResponses([]);
         setParticipantsCount(0);
         setManualLaunchPointer(0);
+        setConsoleMode("idle");
         setActionMessage("PulseRoom sequence completed!");
         setTimeout(() => setActionMessage(""), 2000);
       } catch (err) {
@@ -280,6 +386,7 @@ export default function HostConsolePage() {
         
         // Increment pointer
         setManualLaunchPointer((prev) => prev + 1);
+        setConsoleMode("manual");
       }
     } catch (err) {
       console.error("Manual launch sequence failed:", err);
@@ -345,9 +452,22 @@ export default function HostConsolePage() {
         timerIntervalRef.current = null;
       }
       setTimerSecondsLeft(null);
+      setTimeLeft(0);
       setIsAutoLaunchPaused(false);
 
-      // 3. Broadcast timer cancel/pause event to participants
+      // 3. Complete current live question immediately
+      if (activeQuestion) {
+        await clientDb.markQuestionsCompleted(session.id, [activeQuestion.id]);
+        setQuestions((current) =>
+          current.map((q) => q.id === activeQuestion.id ? { ...q, is_live: false, is_completed: true } : q)
+        );
+        setActiveQuestion(null);
+      }
+
+      setConsoleMode("idle");
+      setManualLaunchPointer(0);
+
+      // 4. Broadcast timer cancel/pause event to participants
       await broadcastSessionEvent(code, {
         type: "questions_timer_pause",
         payload: { questionId: activeQuestion?.id || "none" },
@@ -382,6 +502,7 @@ export default function HostConsolePage() {
 
       // Reset selection checkbox array
       setSelectedQuestionIds([]);
+      setConsoleMode("bulk");
 
       if (target) {
         const targetIdx = questions.findIndex(q => q.id === target.id);
@@ -418,6 +539,7 @@ export default function HostConsolePage() {
       setSelectedQuestionIds([]);
 
       setManualLaunchPointer(1);
+      setConsoleMode("bulk");
 
       if (target) {
         void reloadResponses(target.id);
@@ -577,6 +699,20 @@ export default function HostConsolePage() {
         setResponses([]);
         setParticipantsCount(0);
       }
+
+      // Derive initial consoleMode dynamically from active session state
+      if (activeSession.auto_launch) {
+        setConsoleMode("auto");
+      } else {
+        const liveCount = dbQuestions.filter((q) => q.is_live).length;
+        if (liveCount > 1) {
+          setConsoleMode("bulk");
+        } else if (liveCount === 1) {
+          setConsoleMode("manual");
+        } else {
+          setConsoleMode("idle");
+        }
+      }
     } catch (err) {
       console.error("Error loading host console:", err);
     } finally {
@@ -592,6 +728,50 @@ export default function HostConsolePage() {
   useEffect(() => {
     activeSessionRef.current = session;
   }, [session]);
+
+  const triggerNextQuestion = async () => {
+    const target = activeQuestionRef.current;
+    if (!target) return;
+    
+    // Lock input / calculate scores
+    if (target && target.type === "multiple_choice" && target.correct_option) {
+      try {
+        await clientDb.calculateScores(target.id, target.correct_option);
+      } catch (e) {
+        console.error("Score calculation failed:", e);
+      }
+    }
+
+    // Reset the timer to the timer_seconds baseline
+    const baseline = parseInt(activeSessionRef.current?.timer_seconds as any, 10) || 0;
+    setTimeLeft(baseline);
+
+    // Transition questions: mark current completed and launch next
+    void handleAutoProgress(target.id);
+  };
+
+  const isAutoLaunchActive = consoleMode === "auto" && !isAutoLaunchPaused;
+
+  useEffect(() => {
+    if (!isAutoLaunchActive || timeLeft <= 0) return;
+
+    const interval = setInterval(() => {
+      setTimeLeft((prevTime) => {
+        if (prevTime <= 1) {
+          clearInterval(interval);
+          void triggerNextQuestion(); // Move to next
+          return 0;
+        }
+        return prevTime - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isAutoLaunchActive, timeLeft]);
+
+  useEffect(() => {
+    setTimerSecondsLeft(timeLeft > 0 ? timeLeft : null);
+  }, [timeLeft]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -730,16 +910,38 @@ export default function HostConsolePage() {
   };
 
   const handleAutoProgress = async (currentQId: string) => {
-    // latestQuestions lookup
-    const latestQuestions = [...questions];
-    const currentIdx = latestQuestions.findIndex(q => q.id === currentQId);
-    if (currentIdx !== -1 && currentIdx + 1 < latestQuestions.length) {
-      const nextQ = latestQuestions[currentIdx + 1];
-      void handleSetQuestionLive(nextQ.id);
-    } else {
-      setTimerSecondsLeft(null);
-      setActionMessage("Quiz session completed!");
-      setTimeout(() => setActionMessage(""), 3000);
+    if (!session) return;
+    try {
+      // 1. Mark current question as completed in DB
+      await clientDb.markQuestionsCompleted(session.id, [currentQId]);
+      
+      // Update local state optimistically
+      setQuestions((current) =>
+        current.map((q) => q.id === currentQId ? { ...q, is_live: false, is_completed: true } : q)
+      );
+
+      const latestQuestions = [...questions];
+      const currentIdx = latestQuestions.findIndex(q => q.id === currentQId);
+      
+      if (currentIdx !== -1 && currentIdx + 1 < latestQuestions.length) {
+        const nextQ = latestQuestions[currentIdx + 1];
+        void handleSetQuestionLive(nextQ.id);
+      } else {
+        // If final question finished, stop auto launch in DB
+        await clientDb.updateSessionAutoLaunch(session.id, false, 0);
+        setSession(current => current ? { ...current, auto_launch: false, timer_seconds: 0 } : null);
+        
+        setTimerSecondsLeft(null);
+        setTimeLeft(0);
+        setIsAutoLaunchPaused(false);
+        setActiveQuestion(null);
+        setConsoleMode("idle");
+        
+        setActionMessage("Quiz session completed!");
+        setTimeout(() => setActionMessage(""), 3000);
+      }
+    } catch (err) {
+      console.error("Auto progress failed to mark completed:", err);
     }
   };
 
@@ -752,6 +954,7 @@ export default function HostConsolePage() {
         timerIntervalRef.current = null;
       }
       setTimerSecondsLeft(null);
+      setTimeLeft(0);
 
       await clientDb.setQuestionLive(session.id, questionId);
       
@@ -785,45 +988,16 @@ export default function HostConsolePage() {
       setTimeout(() => setActionMessage(""), 2000);
 
       // Start Auto-Launch countdown timer
-      if (session.auto_launch && session.timer_seconds && session.timer_seconds > 0) {
-        const duration = session.timer_seconds;
+      const duration = parseInt(session.timer_seconds as any, 10) || 0;
+      if (session.auto_launch && duration > 0) {
         setTimerSecondsLeft(duration);
+        setTimeLeft(duration);
 
         // Broadcast timer start
         await broadcastSessionEvent(code, {
           type: "questions_timer_start",
           payload: { questionId, duration },
         });
-
-        let timeLeft = duration;
-        timerIntervalRef.current = setInterval(async () => {
-          if (isAutoLaunchPausedRef.current) {
-            return;
-          }
-          timeLeft -= 1;
-          setTimerSecondsLeft(timeLeft);
-          
-          if (timeLeft <= 0) {
-            if (timerIntervalRef.current) {
-              clearInterval(timerIntervalRef.current);
-              timerIntervalRef.current = null;
-            }
-
-            // Lock input / calculate scores
-            if (target && target.type === "multiple_choice" && target.correct_option) {
-              try {
-                await clientDb.calculateScores(target.id, target.correct_option);
-              } catch (e) {
-                console.error("Score calculation failed:", e);
-              }
-            }
-
-            // Move to next question after 5 seconds delay
-            setTimeout(() => {
-              void handleAutoProgress(questionId);
-            }, 5000);
-          }
-        }, 1000);
       }
     } catch (err) {
       console.error(err);
@@ -1206,6 +1380,18 @@ export default function HostConsolePage() {
                 <span>
                   Created: <span className="font-semibold text-slate-300">{new Date(session.created_at).toLocaleString()}</span> by <span className="font-bold text-cyan-400">{session.creator?.full_name || session.creator_name || "Unknown"} ({session.creator?.email || session.creator_email || "Unknown"})</span>
                 </span>
+                <span className="text-slate-700 hidden sm:inline">|</span>
+                <span className="flex items-center gap-1">
+                  Access Mode: <span className="font-extrabold text-cyan-400">
+                    {session.auth_mode === "anonymous"
+                      ? "Anonymous"
+                      : session.auth_mode === "gmail"
+                      ? "Gmail Verified"
+                      : session.auth_mode === "quiz_gmail"
+                      ? "Quiz (Gmail Verified)"
+                      : session.auth_mode || "Anonymous"}
+                  </span>
+                </span>
                 {session.updater && (
                   <>
                     <span className="text-slate-700 hidden sm:inline">|</span>
@@ -1547,105 +1733,202 @@ export default function HostConsolePage() {
                 
                 {/* Grouped Launch & Delete Sticky Action Buttons */}
                 {questions.length > 0 && (
-                  <div className="sticky top-0 z-10 bg-[#0f172a]/95 backdrop-blur-md border-b border-white/5 pb-3 mb-3 pt-1">
-                    <div className="flex flex-wrap gap-2">
-                      {liveQuestionsList.length > 0 ? (
-                        session?.auto_launch ? (
+                  session?.status === "active" ? (
+                    <div className="sticky top-0 z-10 bg-[#0f172a]/95 backdrop-blur-md border-b border-white/5 pb-3 mb-3 pt-1">
+                      <div className="flex flex-wrap gap-2">
+                        {/* State 1: Idle Toolbar */}
+                        {consoleMode === "idle" && (
                           <>
-                            <Button
-                              type="button"
-                              onClick={handleTogglePauseAutoLaunch}
-                              className={`flex-1 min-w-[110px] h-10 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg animate-all duration-200 ${
-                                isAutoLaunchPaused
-                                  ? "bg-emerald-500 hover:bg-emerald-600 text-slate-950 shadow-emerald-500/10"
-                                  : "bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-amber-500/10"
-                              }`}
-                              title={isAutoLaunchPaused ? "Resume Auto-Launch Timer" : "Pause Auto-Launch Timer"}
-                            >
-                              <Play className="size-3.5 text-slate-950" />
-                              {isAutoLaunchPaused ? "Resume" : "Pause"}
-                            </Button>
-                            <Button
-                              type="button"
-                              onClick={handleCancelAutoLaunch}
-                              className="flex-1 min-w-[110px] h-10 bg-red-500 hover:bg-red-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-red-500/10 animate-all duration-200"
-                              title="Cancel Auto-Launch"
-                            >
-                              <X className="size-3.5 text-slate-950" />
-                              Cancel Auto-Launch
-                            </Button>
+                            {isAutoLaunchConfigExpanded ? (
+                              <div className="flex items-center gap-2 bg-slate-950/40 border border-white/5 rounded-lg px-3 py-1.5 w-full flex-wrap sm:flex-nowrap">
+                                <span className="text-[10px] font-black uppercase text-slate-400 shrink-0">Time per question (10-300s):</span>
+                                <Input
+                                  type="number"
+                                  min={10}
+                                  max={300}
+                                  value={autoLaunchDuration}
+                                  onChange={(e) => setAutoLaunchDuration(parseInt(e.target.value, 10) || 10)}
+                                  className="w-20 h-8 text-center text-xs bg-slate-900 border-white/10 text-white font-bold"
+                                />
+                                <Button
+                                  type="button"
+                                  onClick={handleStartAutoLaunch}
+                                  className="h-8 px-3 text-[10px] font-black uppercase bg-emerald-500 hover:bg-emerald-600 text-slate-950 cursor-pointer rounded-md"
+                                >
+                                  Start
+                                </Button>
+                                <Button
+                                  type="button"
+                                  onClick={() => setIsAutoLaunchConfigExpanded(false)}
+                                  className="h-8 px-3 text-[10px] font-black uppercase bg-slate-800 hover:bg-slate-700 text-white cursor-pointer rounded-md"
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            ) : (
+                              <>
+                                <Button
+                                  type="button"
+                                  onClick={handleStartManual}
+                                  className="flex-1 min-w-[110px] h-10 bg-sky-500 hover:bg-sky-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-sky-500/10 animate-all duration-200"
+                                  title="Start Manual Sequence"
+                                >
+                                  <Play className="size-3.5 text-slate-950" />
+                                  Start Manual
+                                </Button>
+
+                                <Button
+                                  type="button"
+                                  onClick={() => setIsAutoLaunchConfigExpanded(true)}
+                                  className="flex-1 min-w-[110px] h-10 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-amber-500/10 animate-all duration-200"
+                                  title="Auto-Launch Configuration"
+                                >
+                                  <Clock className="size-3.5 text-slate-950" />
+                                  Auto-Launch
+                                </Button>
+
+                                <Button
+                                  type="button"
+                                  onClick={handleLaunchSelected}
+                                  disabled={selectedQuestionIds.length === 0}
+                                  className="flex-1 min-w-[110px] h-10 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-40 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-500/10 animate-all duration-200"
+                                  title="Launch Selected Questions"
+                                >
+                                  <Play className="size-3.5 text-slate-950" />
+                                  Launch Selected ({selectedQuestionIds.length})
+                                </Button>
+                                
+                                <Button
+                                  type="button"
+                                  onClick={handleLaunchAll}
+                                  className="flex-1 min-w-[110px] h-10 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/10 animate-all duration-200"
+                                  title="Launch All Questions"
+                                >
+                                  <Radio className="size-3.5 animate-pulse text-slate-950" />
+                                  Launch All
+                                </Button>
+
+                                <Button
+                                  type="button"
+                                  onClick={handleBulkDelete}
+                                  disabled={selectedQuestionIds.length === 0}
+                                  className="flex-1 min-w-[110px] h-10 bg-red-500/10 hover:bg-red-500/20 disabled:opacity-40 text-red-400 border border-red-500/20 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-red-500/10 animate-all duration-200"
+                                  title="Delete Selected"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                  Delete ({selectedQuestionIds.length})
+                                </Button>
+                              </>
+                            )}
                           </>
-                        ) : (
-                          <Button
-                            type="button"
-                            onClick={handleMarkCompleted}
-                            className="flex-1 min-w-[130px] h-10 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/10 animate-all duration-200"
-                            title="Mark Completed"
-                          >
-                            <CheckCircle2 className="size-3.5 text-slate-950" />
-                            Mark Completed ({liveQuestionsList.length})
-                          </Button>
-                        )
-                      ) : (
-                        <>
-                          <Button
-                            type="button"
-                            onClick={handleLaunchSelected}
-                            disabled={selectedQuestionIds.length === 0}
-                            className="flex-1 min-w-[110px] h-10 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-40 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-500/10 animate-all duration-200"
-                            title="Launch Selected Questions"
-                          >
-                            <Play className="size-3.5 text-slate-950" />
-                            Launch Selected ({selectedQuestionIds.length})
-                          </Button>
-                          
-                          <Button
-                            type="button"
-                            onClick={handleLaunchAll}
-                            className="flex-1 min-w-[110px] h-10 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/10 animate-all duration-200"
-                            title="Launch All Questions"
-                          >
-                            <Radio className="size-3.5 animate-pulse text-slate-950" />
-                            Launch All
-                          </Button>
+                        )}
 
-                          <Button
-                            type="button"
-                            onClick={() => {
-                              setAutoLaunchError("");
-                              setShowAutoLaunchModal(true);
-                            }}
-                            className="flex-1 min-w-[110px] h-10 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-amber-500/10 animate-all duration-200"
-                            title="Auto-Launch timer settings"
-                          >
-                            <Radio className="size-3.5 animate-pulse text-slate-950" />
-                            Auto Launch
-                          </Button>
-                        </>
-                      )}
-                      
-                      <Button
-                        type="button"
-                        onClick={handleManualLaunch}
-                        className="flex-1 min-w-[110px] h-10 bg-sky-500 hover:bg-sky-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-sky-500/10 animate-all duration-200"
-                        title="Manual Launch Sequence"
-                      >
-                        <Play className="size-3.5 text-slate-950" />
-                        {getManualLaunchButtonText()}
-                      </Button>
+                        {/* State 2: Manual Sequence Toolbar */}
+                        {consoleMode === "manual" && (
+                          <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
+                            <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-3.5 py-2 w-full sm:w-auto flex-1 text-red-400 text-xs font-black uppercase tracking-wider">
+                              <span className="h-2 w-2 rounded-full bg-red-500 animate-ping mr-1" />
+                              LIVE: Q{questions.findIndex(q => q.id === activeQuestion?.id) + 1}
+                            </div>
+                            
+                            <div className="flex gap-2 w-full sm:w-auto shrink-0">
+                              <Button
+                                type="button"
+                                onClick={handleManualLaunch}
+                                className="flex-1 sm:flex-initial min-w-[120px] h-10 bg-sky-500 hover:bg-sky-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-sky-500/10 animate-all duration-200"
+                                title={manualLaunchPointer === questions.length ? "Finish Sequence" : "Launch Next Question"}
+                              >
+                                <Play className="size-3.5 text-slate-950" />
+                                {manualLaunchPointer === questions.length ? "🏁 Finish" : "⏭ Launch Next"}
+                              </Button>
+                              
+                              <Button
+                                type="button"
+                                onClick={handleEndAndCompleteManual}
+                                className="flex-1 sm:flex-initial min-w-[120px] h-10 bg-red-500 hover:bg-red-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-red-500/10 animate-all duration-200"
+                                title="End & Complete Live Question"
+                              >
+                                <X className="size-3.5 text-slate-950" />
+                                End & Complete
+                              </Button>
+                            </div>
+                          </div>
+                        )}
 
-                      <Button
-                        type="button"
-                        onClick={handleBulkDelete}
-                        disabled={selectedQuestionIds.length === 0}
-                        className="flex-1 min-w-[110px] h-10 bg-red-500/10 hover:bg-red-500/20 disabled:opacity-40 text-red-400 border border-red-500/20 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-red-500/10 animate-all duration-200"
-                        title="Delete Selected"
-                      >
-                        <Trash2 className="size-3.5" />
-                        Delete ({selectedQuestionIds.length})
-                      </Button>
+                        {/* State 3: Auto-Launch Countdown Toolbar */}
+                        {consoleMode === "auto" && (
+                          <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
+                            <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3.5 py-2 w-full sm:w-auto flex-1 text-amber-400 text-xs font-black uppercase tracking-wider">
+                              <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse mr-1" />
+                              AUTO-LIVE: Q{questions.findIndex(q => q.id === activeQuestion?.id) + 1} (⏱️ {timerSecondsLeft !== null ? timerSecondsLeft : 0}s remaining)
+                            </div>
+                            
+                            <div className="flex gap-2 w-full sm:w-auto shrink-0 flex-wrap sm:flex-nowrap">
+                              <Button
+                                type="button"
+                                onClick={handleTogglePauseAutoLaunch}
+                                className={`flex-1 sm:flex-initial min-w-[100px] h-10 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg animate-all duration-200 ${
+                                  isAutoLaunchPaused
+                                    ? "bg-emerald-500 hover:bg-emerald-600 text-slate-950 shadow-emerald-500/10"
+                                    : "bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-amber-500/10"
+                                }`}
+                                title={isAutoLaunchPaused ? "Resume Auto-Launch Timer" : "Pause Auto-Launch Timer"}
+                              >
+                                <Play className="size-3.5 text-slate-950" />
+                                {isAutoLaunchPaused ? "Resume" : "Pause"}
+                              </Button>
+                              
+                              <Button
+                                type="button"
+                                onClick={handleSkipAutoLaunch}
+                                className="flex-1 sm:flex-initial min-w-[100px] h-10 bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-500/10 animate-all duration-200"
+                                title="Skip to Next Question"
+                              >
+                                <Play className="size-3.5 text-slate-950" />
+                                Skip to Next
+                              </Button>
+                              
+                              <Button
+                                type="button"
+                                onClick={handleCancelAutoLaunch}
+                                className="flex-1 sm:flex-initial min-w-[100px] h-10 bg-red-500 hover:bg-red-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-red-500/10 animate-all duration-200"
+                                title="Cancel Auto-Launch Sequence"
+                              >
+                                <X className="size-3.5 text-slate-950" />
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* State 4: Bulk Launch Toolbar */}
+                        {consoleMode === "bulk" && (
+                          <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
+                            <div className="flex items-center gap-2 bg-violet-500/10 border border-violet-500/20 rounded-lg px-3.5 py-2 w-full sm:w-auto flex-1 text-violet-400 text-xs font-black uppercase tracking-wider">
+                              <span className="h-2 w-2 rounded-full bg-violet-500 animate-pulse mr-1" />
+                              LIVE: {liveQuestionsList.length} Questions
+                            </div>
+                            
+                            <Button
+                              type="button"
+                              onClick={handleMarkAllBulkCompleted}
+                              className="w-full sm:w-auto min-w-[150px] h-10 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/10 animate-all duration-200 shrink-0"
+                              title="Mark All Live Questions Completed"
+                            >
+                              <CheckCircle2 className="size-3.5 text-slate-950" />
+                              Mark All Completed
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="sticky top-0 z-10 bg-[#0f172a]/95 backdrop-blur-md border-b border-white/5 pb-3 mb-3 pt-1">
+                      <div className="flex items-center justify-center bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 w-full text-amber-400 font-extrabold text-xs uppercase tracking-wider text-center">
+                        ⚠️ Activate the PulseRoom to enable launch controls.
+                      </div>
+                    </div>
+                  )
                 )}
                 
                 <div className="space-y-2.5">
@@ -1675,19 +1958,21 @@ export default function HostConsolePage() {
                         >
                           <div className="flex justify-between items-start gap-2">
                             <div className="flex gap-3 items-start flex-1 min-w-0">
-                              <input
-                                type="checkbox"
-                                id={`select-${q.id}`}
-                                name={`select-${q.id}`}
-                                aria-label={`Select Question ${globalIndex + 1}`}
-                                className="mt-1 size-4 shrink-0 rounded border-white/10 bg-slate-950 accent-cyan-500 cursor-pointer"
-                                checked={selectedQuestionIds.includes(q.id)}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleSelectQuestion(q.id);
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                              />
+                              {consoleMode === "idle" && (
+                                <input
+                                  type="checkbox"
+                                  id={`select-${q.id}`}
+                                  name={`select-${q.id}`}
+                                  aria-label={`Select Question ${globalIndex + 1}`}
+                                  className="mt-1 size-4 shrink-0 rounded border-white/10 bg-slate-950 accent-cyan-500 cursor-pointer"
+                                  checked={selectedQuestionIds.includes(q.id)}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleSelectQuestion(q.id);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              )}
                               <div className="flex-1 min-w-0">
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   <span className={`inline-block rounded-[4px] text-[9px] font-extrabold px-2 py-0.5 uppercase tracking-wider ${
@@ -2108,7 +2393,7 @@ export default function HostConsolePage() {
                     max={300}
                     placeholder="e.g. 30"
                     value={autoLaunchDuration}
-                    onChange={(e) => setAutoLaunchDuration(parseInt(e.target.value) || 0)}
+                    onChange={(e) => setAutoLaunchDuration(parseInt(e.target.value, 10) || 0)}
                     className="h-11 bg-slate-950/50 border-white/10 text-white placeholder-slate-500 focus:border-cyan-400 text-sm font-medium"
                   />
                   {autoLaunchError && (

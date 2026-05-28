@@ -45,6 +45,30 @@ export function subscribeToSession(
         });
       });
 
+      channel.bind("leaderboard-updated", (data: any) => {
+        console.log("Pusher received 'leaderboard-updated' event:", data);
+        onEvent({
+          type: "leaderboard-updated",
+          payload: {}
+        });
+      });
+
+      channel.bind("leaderboard_updated", (data: any) => {
+        console.log("Pusher received 'leaderboard_updated' event:", data);
+        onEvent({
+          type: "leaderboard-updated",
+          payload: {}
+        });
+      });
+
+      channel.bind("new-response-logged", (data: any) => {
+        console.log("Pusher received 'new-response-logged' event:", data);
+        onEvent({
+          type: "leaderboard-updated",
+          payload: {}
+        });
+      });
+
       channel.bind("session-status", (data: any) => {
         console.log("Pusher received 'session-status' event:", data);
         onEvent({

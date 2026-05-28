@@ -404,6 +404,8 @@ export async function createSession(
     throw new Error("Invalid session title. Title cannot be empty or 'Untitled Session'.");
   }
 
+  const parsedTimerSeconds = parseInt(timerSeconds as any, 10) || 0;
+
   // Generate random unique 6-digit code
   let code = "";
   for (let i = 0; i < 6; i++) {
@@ -425,7 +427,7 @@ export async function createSession(
     updated_at: new Date().toISOString(),
     auth_mode: authMode,
     auto_launch: autoLaunch,
-    timer_seconds: timerSeconds,
+    timer_seconds: parsedTimerSeconds,
   };
 
   if (isSupabase) {
@@ -617,16 +619,45 @@ export async function createQuestion(
   if (isSupabase) {
     try {
       const supabase = await createServerClient();
-      const { data, error } = await supabase
-        .from("questions")
-        .insert(newQuestion)
-        .select()
-        .single();
-      
-      if (error) throw new Error(error.message);
-      if (data) {
-        await touchSession(sessionId);
-        return data as Question;
+      try {
+        const { data, error } = await supabase
+          .from("questions")
+          .insert(newQuestion)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        if (data) {
+          await touchSession(sessionId);
+          return data as Question;
+        }
+      } catch (err: any) {
+        // If is_completed column is missing or schema cache is stale, retry without it
+        if (
+          err.message?.includes("is_completed") ||
+          err.details?.includes("is_completed") ||
+          err.message?.includes("column")
+        ) {
+          console.warn("\n⚠️  [SUPABASE SCHEMA WARNING]: The 'is_completed' column is missing in your Supabase 'questions' table.");
+          console.warn("👉 Please open your Supabase SQL Editor (https://supabase.com/dashboard/project/zseytxmgwmsvrudthpgs/sql/new) and run the script inside 'supabase/migrations/20260527000000_add_question_completed_state.sql' to add it!\n");
+          
+          const newQuestionWithoutCompleted = { ...newQuestion };
+          delete newQuestionWithoutCompleted.is_completed;
+
+          const { data: retryData, error: retryError } = await supabase
+            .from("questions")
+            .insert(newQuestionWithoutCompleted)
+            .select()
+            .single();
+
+          if (retryError) throw retryError;
+          if (retryData) {
+            await touchSession(sessionId);
+            return retryData as Question;
+          }
+        } else {
+          throw err;
+        }
       }
     } catch (e: any) {
       console.error("Supabase createQuestion error:", e);
@@ -682,12 +713,28 @@ export async function setQuestionLive(sessionId: string, questionId: string): Pr
       if (error1) throw new Error(error1.message);
       
       // Activate selected question
-      const { error: error2 } = await supabase
-        .from("questions")
-        .update({ is_live: true, is_completed: false })
-        .eq("id", questionId);
-      
-      if (error2) throw new Error(error2.message);
+      try {
+        const { error: error2 } = await supabase
+          .from("questions")
+          .update({ is_live: true, is_completed: false })
+          .eq("id", questionId);
+        
+        if (error2) throw error2;
+      } catch (err2: any) {
+        if (err2.message?.includes("is_completed") || err2.details?.includes("is_completed") || err2.message?.includes("column")) {
+          console.warn("\n⚠️  [SUPABASE SCHEMA WARNING]: The 'is_completed' column is missing in your Supabase 'questions' table.");
+          console.warn("👉 Please open your Supabase SQL Editor (https://supabase.com/dashboard/project/zseytxmgwmsvrudthpgs/sql/new) and run the script inside 'supabase/migrations/20260527000000_add_question_completed_state.sql' to add it!\n");
+          
+          // Retry without is_completed
+          const { error: retryError } = await supabase
+            .from("questions")
+            .update({ is_live: true })
+            .eq("id", questionId);
+          if (retryError) throw new Error(retryError.message);
+        } else {
+          throw err2;
+        }
+      }
     } catch (e: any) {
       console.error("Supabase setQuestionLive error:", e);
       throw new Error(e.message || "Failed to set question live");
@@ -761,19 +808,78 @@ export async function submitResponse(
       const supabase = isServer ? await createServerClient() : createBrowserClient();
       
       let dbParticipantId = pulseParticipantId || null;
+      let participantEmail: string | null = null;
+      let participantName: string | null = null;
+
       if (dbParticipantId) {
         if (isMockId(dbParticipantId)) {
           dbParticipantId = null;
         } else {
-          // Verify if it exists in the database
+          // Verify if it exists in the database and get details
           const { data: participantExists } = await supabase
             .from("pulse_participants")
-            .select("id")
+            .select("id, name, email")
             .eq("id", dbParticipantId)
             .maybeSingle();
-          if (!participantExists) {
+          if (participantExists) {
+            participantEmail = participantExists.email;
+            participantName = participantExists.name;
+          } else {
             dbParticipantId = null;
           }
+        }
+      }
+
+      let authUserEmail: string | null = null;
+      let authUserName: string | null = null;
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          authUserEmail = user.email || null;
+          authUserName = user.user_metadata?.full_name || user.user_metadata?.name || null;
+        }
+      } catch (authErr) {
+        // Safe to ignore if not authenticated or browser client issues
+      }
+
+      // Merge auth details with participant table details
+      const userEmail = participantEmail || authUserEmail || null;
+      const userName = participantName || authUserName || null;
+
+      // Precheck for duplicate answer by user_email to prevent double submissions
+      if (userEmail) {
+        const { data: dupResponse } = await supabase
+          .from("responses")
+          .select("*")
+          .eq("question_id", questionId)
+          .eq("user_email", userEmail)
+          .maybeSingle();
+
+        if (dupResponse) {
+          console.log(`[IDEMPOTENCY PRECHECK]: User ${userEmail} has already submitted an answer for question ${questionId}. Gracefully rejecting.`);
+          return {
+            ...dupResponse,
+            status: "already_submitted"
+          } as Response;
+        }
+      }
+
+      // Fetch the question details
+      const { data: question } = await supabase
+        .from("questions")
+        .select("correct_option, session_id")
+        .eq("id", questionId)
+        .maybeSingle();
+
+      const sessionId = question?.session_id || null;
+      let pointsAwarded = 0;
+      let isCorrect = false;
+
+      if (question && question.correct_option !== null && question.correct_option !== undefined) {
+        const correctOptionValueStr = (question.correct_option - 1).toString();
+        if (sanitizedValue === correctOptionValueStr) {
+          isCorrect = true;
+          pointsAwarded = 10;
         }
       }
 
@@ -787,32 +893,126 @@ export async function submitResponse(
 
       if (findError) throw new Error(findError.message);
 
-      if (existing) {
-        const { data, error } = await supabase
-          .from("responses")
-          .update({ 
-            value: sanitizedValue, 
-            created_at: new Date().toISOString(),
-            pulse_participant_id: dbParticipantId
-          })
-          .eq("id", existing.id)
-          .select()
-          .single();
-        
-        if (error) throw new Error(error.message);
-        if (data) resolvedResponse = data as Response;
-      } else {
-        const { data, error } = await supabase
-          .from("responses")
-          .insert({
+      try {
+        if (existing) {
+          const { data, error } = await supabase
+            .from("responses")
+            .update({ 
+              value: sanitizedValue, 
+              created_at: new Date().toISOString(),
+              pulse_participant_id: dbParticipantId,
+              session_id: sessionId,
+              user_email: userEmail,
+              user_name: userName,
+              selected_option: sanitizedValue,
+              is_correct: isCorrect,
+              points_awarded: pointsAwarded
+            })
+            .eq("id", existing.id)
+            .select()
+            .single();
+          
+          if (error) throw error;
+          if (data) resolvedResponse = data as Response;
+        } else {
+          const { data, error } = await supabase
+            .from("responses")
+            .insert({
+              ...newResponse,
+              pulse_participant_id: dbParticipantId,
+              session_id: sessionId,
+              user_email: userEmail,
+              user_name: userName,
+              selected_option: sanitizedValue,
+              is_correct: isCorrect,
+              points_awarded: pointsAwarded
+            })
+            .select()
+            .single();
+          
+          if (error) throw error;
+          if (data) resolvedResponse = data as Response;
+        }
+      } catch (insertErr: any) {
+        if (
+          insertErr.message?.includes("unique_user_question") ||
+          insertErr.details?.includes("unique_user_question") ||
+          insertErr.message?.includes("unique constraint") ||
+          insertErr.code === "23505"
+        ) {
+          console.log(`[IDEMPOTENCY UNIQUE CONSTRAINT CATCH]: Caught duplicate insert error gracefully for question ${questionId}.`);
+          return {
             ...newResponse,
-            pulse_participant_id: dbParticipantId
-          })
-          .select()
-          .single();
-        
-        if (error) throw new Error(error.message);
-        if (data) resolvedResponse = data as Response;
+            status: "already_submitted"
+          } as Response;
+        }
+
+        if (
+          insertErr.message?.includes("is_correct") ||
+          insertErr.details?.includes("is_correct") ||
+          insertErr.message?.includes("column") ||
+          insertErr.message?.includes("schema cache")
+        ) {
+          console.warn("\n⚠️  [SUPABASE SCHEMA WARNING]: The responses ledger columns (session_id, user_email, user_name, selected_option, is_correct, points_awarded) are missing in your Supabase 'responses' table.");
+          console.warn("👉 Please open your Supabase SQL Editor (https://supabase.com/dashboard/project/zseytxmgwmsvrudthpgs/sql/new) and run the script inside 'supabase/migrations/20260527000003_redesign_responses_ledger.sql' to add them!\n");
+
+          // GRACEFUL FALLBACK: Retry insertion/update using only standard Response schema columns
+          if (existing) {
+            const { data, error } = await supabase
+              .from("responses")
+              .update({ 
+                value: sanitizedValue, 
+                created_at: new Date().toISOString(),
+                pulse_participant_id: dbParticipantId
+              })
+              .eq("id", existing.id)
+              .select()
+              .single();
+            if (error) throw new Error(error.message);
+            if (data) resolvedResponse = data as Response;
+          } else {
+            const { data, error } = await supabase
+              .from("responses")
+              .insert({
+                ...newResponse,
+                pulse_participant_id: dbParticipantId
+              })
+              .select()
+              .single();
+            if (error) throw new Error(error.message);
+            if (data) resolvedResponse = data as Response;
+          }
+        } else {
+          throw insertErr;
+        }
+      }
+
+      // --- ATOMIC SCORE INCREMENT FOR CORRECT VOTE SUBMISSIONS ---
+      if (dbParticipantId && isCorrect) {
+        // Retrieve current participant score
+        const { data: participant } = await supabase
+          .from("pulse_participants")
+          .select("score")
+          .eq("id", dbParticipantId)
+          .maybeSingle();
+
+        if (participant) {
+          // Permanently update and increment the score column by 10 points
+          await supabase
+            .from("pulse_participants")
+            .update({ score: participant.score + 10 })
+            .eq("id", dbParticipantId);
+
+          // Instantly broadcast that leaderboard updated
+          const sessionCodeVal = await getSessionCodeById(sessionId);
+          if (sessionCodeVal && pusherServer) {
+            try {
+              await pusherServer.trigger(`session-${sessionCodeVal}`, "leaderboard-updated", {});
+            } catch (broadcastErr) {
+              console.error("Pusher new-vote leaderboard-updated trigger error:", broadcastErr);
+            }
+          }
+        }
       }
     } catch (e: any) {
       console.error("Supabase submitResponse error:", e);
@@ -820,12 +1020,87 @@ export async function submitResponse(
     }
   } else {
     // Local Mock Fallback
+    // Fetch details for mock
+    let mockParticipantName: string | null = null;
+    let mockParticipantEmail: string | null = null;
+    if (pulseParticipantId && db.pulse_participants) {
+      const p = db.pulse_participants.find(p => p.id === pulseParticipantId);
+      if (p) {
+        mockParticipantName = p.name;
+        mockParticipantEmail = p.email;
+      }
+    }
+
+    const mockQuestion = db.questions.find(q => q.id === questionId);
+    const mockSessionId = mockQuestion ? mockQuestion.session_id : null;
+
+    // Precheck for duplicate answer in mock responses by question_id and user_email
+    if (mockParticipantEmail) {
+      const dupMock = db.responses.find(
+        r => r.question_id === questionId && 
+             r.user_email?.toLowerCase() === mockParticipantEmail?.toLowerCase()
+      );
+
+      if (dupMock) {
+        console.log(`[MOCK IDEMPOTENCY PRECHECK]: User ${mockParticipantEmail} has already submitted an answer for question ${questionId}. Gracefully rejecting.`);
+        return {
+          ...dupMock,
+          status: "already_submitted"
+        } as Response;
+      }
+    }
+
+    const existingMock = db.responses.find(
+      r => r.question_id === questionId && r.participant_id === participantId
+    );
+
     // Remove existing response from this participant for this question (to prevent multiple submissions)
     db.responses = db.responses.filter(
       r => !(r.question_id === questionId && r.participant_id === participantId)
     );
 
-    db.responses.push(newResponse);
+    let mockIsCorrect = false;
+    let mockPointsAwarded = 0;
+
+    if (mockQuestion && mockQuestion.correct_option !== null && mockQuestion.correct_option !== undefined) {
+      const correctOptionValueStr = (mockQuestion.correct_option - 1).toString();
+      if (sanitizedValue === correctOptionValueStr) {
+        mockIsCorrect = true;
+        mockPointsAwarded = 10;
+      }
+    }
+
+    const mockResponseToInsert = {
+      ...newResponse,
+      session_id: mockSessionId,
+      user_email: mockParticipantEmail,
+      user_name: mockParticipantName,
+      selected_option: sanitizedValue,
+      is_correct: mockIsCorrect,
+      points_awarded: mockPointsAwarded
+    };
+
+    db.responses.push(mockResponseToInsert);
+
+    if (pulseParticipantId && mockIsCorrect && mockSessionId) {
+      if (!db.pulse_participants) {
+        db.pulse_participants = [];
+      }
+      const p = db.pulse_participants.find(p => p.id === pulseParticipantId);
+      if (p) {
+        p.score += 10;
+
+        // Trigger real-time leaderboard update mock broadcast
+        const sessionCodeVal = await getSessionCodeById(mockSessionId);
+        if (sessionCodeVal && pusherServer) {
+          try {
+            await pusherServer.trigger(`session-${sessionCodeVal}`, "leaderboard-updated", {});
+          } catch (e) {
+            console.error("Pusher mock leaderboard-updated trigger error:", e);
+          }
+        }
+      }
+    }
   }
 
   // Broadcast via Pusher
@@ -881,12 +1156,28 @@ export async function setQuestionsLive(sessionId: string, questionIds: string[])
       if (error1) throw new Error(error1.message);
       
       // Activate selected questions
-      const { error: error2 } = await supabase
-        .from("questions")
-        .update({ is_live: true, is_completed: false })
-        .in("id", questionIds);
-      
-      if (error2) throw new Error(error2.message);
+      try {
+        const { error: error2 } = await supabase
+          .from("questions")
+          .update({ is_live: true, is_completed: false })
+          .in("id", questionIds);
+        
+        if (error2) throw error2;
+      } catch (err2: any) {
+        if (err2.message?.includes("is_completed") || err2.details?.includes("is_completed") || err2.message?.includes("column")) {
+          console.warn("\n⚠️  [SUPABASE SCHEMA WARNING]: The 'is_completed' column is missing in your Supabase 'questions' table.");
+          console.warn("👉 Please open your Supabase SQL Editor (https://supabase.com/dashboard/project/zseytxmgwmsvrudthpgs/sql/new) and run the script inside 'supabase/migrations/20260527000000_add_question_completed_state.sql' to add it!\n");
+          
+          // Retry without is_completed
+          const { error: retryError } = await supabase
+            .from("questions")
+            .update({ is_live: true })
+            .in("id", questionIds);
+          if (retryError) throw new Error(retryError.message);
+        } else {
+          throw err2;
+        }
+      }
     } catch (e: any) {
       console.error("Supabase setQuestionsLive error:", e);
       throw new Error(e.message || "Failed to set questions live");
@@ -927,12 +1218,28 @@ export async function markQuestionsCompleted(sessionId: string, questionIds: str
   if (isSupabaseConfigured() && !isMockId(sessionId)) {
     try {
       const supabase = await createServerClient();
-      const { error } = await supabase
-        .from("questions")
-        .update({ is_live: false, is_completed: true })
-        .in("id", questionIds);
-      
-      if (error) throw error;
+      try {
+        const { error } = await supabase
+          .from("questions")
+          .update({ is_live: false, is_completed: true })
+          .in("id", questionIds);
+        
+        if (error) throw error;
+      } catch (err: any) {
+        if (err.message?.includes("is_completed") || err.details?.includes("is_completed") || err.message?.includes("column")) {
+          console.warn("\n⚠️  [SUPABASE SCHEMA WARNING]: The 'is_completed' column is missing in your Supabase 'questions' table.");
+          console.warn("👉 Please open your Supabase SQL Editor (https://supabase.com/dashboard/project/zseytxmgwmsvrudthpgs/sql/new) and run the script inside 'supabase/migrations/20260527000000_add_question_completed_state.sql' to add it!\n");
+          
+          // Retry without is_completed
+          const { error: retryError } = await supabase
+            .from("questions")
+            .update({ is_live: false })
+            .in("id", questionIds);
+          if (retryError) throw new Error(retryError.message);
+        } else {
+          throw err;
+        }
+      }
     } catch (e: any) {
       console.error("Supabase markQuestionsCompleted error:", e);
       throw new Error(e.message || "Failed to mark questions completed");
@@ -1006,6 +1313,7 @@ export async function updateSessionAutoLaunch(
   autoLaunch: boolean,
   timerSeconds: number
 ): Promise<void> {
+  const parsedTimerSeconds = parseInt(timerSeconds as any, 10) || 0;
   const now = new Date().toISOString();
   if (isSupabaseConfigured()) {
     try {
@@ -1014,7 +1322,7 @@ export async function updateSessionAutoLaunch(
         .from("sessions")
         .update({ 
           auto_launch: autoLaunch, 
-          timer_seconds: timerSeconds,
+          timer_seconds: parsedTimerSeconds,
           updated_at: now
         })
         .eq("id", sessionId);
@@ -1029,7 +1337,7 @@ export async function updateSessionAutoLaunch(
     const session = db.sessions.find(s => s.id === sessionId);
     if (session) {
       session.auto_launch = autoLaunch;
-      session.timer_seconds = timerSeconds;
+      session.timer_seconds = parsedTimerSeconds;
       session.updated_at = now;
     }
   }
@@ -1394,7 +1702,7 @@ export async function registerParticipant(
     try {
       const supabase = createAdminClient();
       
-      // Check if participant already exists in this session by email
+      // 1. Try checking if participant already exists in this session by email
       const { data: existing, error: findError } = await supabase
         .from("pulse_participants")
         .select("*")
@@ -1405,15 +1713,51 @@ export async function registerParticipant(
       if (findError) throw findError;
       if (existing) return existing as PulseParticipant;
 
-      // Insert new participant using admin client
+      // 2. Perform atomic upsert with ignoreDuplicates to guarantee no duplicates are inserted
       const { data, error } = await supabase
         .from("pulse_participants")
-        .insert(newParticipant)
+        .upsert(
+          {
+            id: newParticipant.id,
+            session_id: sessionId,
+            name: sanitizedName,
+            email: sanitizedEmail,
+            score: 0,
+            created_at: newParticipant.created_at
+          },
+          {
+            onConflict: "session_id,email",
+            ignoreDuplicates: true
+          }
+        )
         .select()
-        .single();
+        .maybeSingle();
 
-      if (error) throw error;
-      if (data) return data as PulseParticipant;
+      if (error) {
+        if (
+          error.message?.includes("constraint") ||
+          error.details?.includes("constraint") ||
+          error.message?.includes("unique_session_email")
+        ) {
+          console.warn("\n⚠️  [SUPABASE SCHEMA WARNING]: The 'unique_session_email' constraint is missing in your 'pulse_participants' table.");
+          console.warn("👉 Please open your Supabase SQL Editor (https://supabase.com/dashboard/project/zseytxmgwmsvrudthpgs/sql/new) and run the script inside 'supabase/migrations/20260527000002_add_unique_constraint.sql' to add it!\n");
+        }
+        throw error;
+      }
+
+      // If a conflict was ignored, RETURNING * might be empty (0 rows). We then safely re-fetch the existing record.
+      if (!data) {
+        const { data: reExisting, error: reError } = await supabase
+          .from("pulse_participants")
+          .select("*")
+          .eq("session_id", sessionId)
+          .eq("email", sanitizedEmail)
+          .single();
+        if (reError) throw reError;
+        return reExisting as PulseParticipant;
+      }
+
+      return data as PulseParticipant;
     } catch (e) {
       logDbError("registerParticipant", e);
     }
@@ -1438,15 +1782,86 @@ export async function getParticipants(sessionId: string): Promise<PulseParticipa
     try {
       const supabase = createAdminClient();
       
-      const { data, error } = await supabase
+      // 1. Fetch registered participants for this session to seed standings with 0 score
+      const { data: registered, error: regError } = await supabase
         .from("pulse_participants")
         .select("*")
-        .eq("session_id", sessionId)
-        .order("score", { ascending: false })
-        .order("name", { ascending: true });
+        .eq("session_id", sessionId);
 
-      if (error) throw error;
-      if (data) return data as PulseParticipant[];
+      if (regError) throw regError;
+
+      const participantMap = new Map<string, PulseParticipant>();
+      if (registered) {
+        registered.forEach((p) => {
+          participantMap.set(p.email.toLowerCase(), {
+            id: p.id,
+            session_id: p.session_id,
+            name: p.name,
+            email: p.email,
+            score: 0,
+            created_at: p.created_at
+          });
+        });
+      }
+
+      try {
+        // 2. Fetch all response ledger entries matching this session
+        const { data: responses, error: respError } = await supabase
+          .from("responses")
+          .select("*")
+          .eq("session_id", sessionId);
+
+        if (respError) throw respError;
+
+        // 3. Aggregate points awarded from responses ledger
+        if (responses) {
+          responses.forEach((r) => {
+            if (!r.user_email) return;
+            const emailKey = r.user_email.toLowerCase();
+            const points = r.points_awarded || 0;
+
+            const existing = participantMap.get(emailKey);
+            if (existing) {
+              existing.score += points;
+            } else {
+              participantMap.set(emailKey, {
+                id: r.pulse_participant_id || crypto.randomUUID(),
+                session_id: sessionId,
+                name: r.user_name || r.user_email.split("@")[0] || "Anonymous",
+                email: r.user_email,
+                score: points,
+                created_at: r.created_at
+              });
+            }
+          });
+        }
+      } catch (ledgerErr: any) {
+        if (
+          ledgerErr.message?.includes("session_id") ||
+          ledgerErr.details?.includes("session_id") ||
+          ledgerErr.message?.includes("column") ||
+          ledgerErr.message?.includes("schema cache")
+        ) {
+          console.warn("\n⚠️  [SUPABASE SCHEMA WARNING]: The 'responses' ledger columns are missing in your Supabase database.");
+          console.warn("👉 Please open your Supabase SQL Editor (https://supabase.com/dashboard/project/zseytxmgwmsvrudthpgs/sql/new) and run the script inside 'supabase/migrations/20260527000003_redesign_responses_ledger.sql' to add them!\n");
+          
+          // GRACEFUL FALLBACK: Use registered participants with their static scores!
+          if (registered) {
+            return (registered as PulseParticipant[]).sort(
+              (a, b) => b.score - a.score || a.name.localeCompare(b.name)
+            );
+          }
+          return [];
+        }
+        throw ledgerErr;
+      }
+
+      // 4. Sort standings descending by score, ascending by name
+      const sortedParticipants = Array.from(participantMap.values()).sort(
+        (a, b) => b.score - a.score || a.name.localeCompare(b.name)
+      );
+
+      return sortedParticipants;
     } catch (e) {
       logDbError("getParticipants", e);
     }
@@ -1456,9 +1871,50 @@ export async function getParticipants(sessionId: string): Promise<PulseParticipa
   if (!db.pulse_participants) {
     db.pulse_participants = [];
   }
-  return db.pulse_participants
-    .filter(p => p.session_id === sessionId)
-    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  if (!db.responses) {
+    db.responses = [];
+  }
+
+  const participantMap = new Map<string, PulseParticipant>();
+
+  // Fetch mock registered participants
+  const mockRegistered = db.pulse_participants.filter(p => p.session_id === sessionId);
+  mockRegistered.forEach(p => {
+    participantMap.set(p.email.toLowerCase(), {
+      id: p.id,
+      session_id: p.session_id,
+      name: p.name,
+      email: p.email,
+      score: 0,
+      created_at: p.created_at
+    });
+  });
+
+  // Aggregate mock responses
+  const mockResponses = db.responses.filter(r => r.session_id === sessionId);
+  mockResponses.forEach(r => {
+    if (!r.user_email) return;
+    const emailKey = r.user_email.toLowerCase();
+    const points = r.points_awarded || 0;
+
+    const existing = participantMap.get(emailKey);
+    if (existing) {
+      existing.score += points;
+    } else {
+      participantMap.set(emailKey, {
+        id: r.pulse_participant_id || crypto.randomUUID(),
+        session_id: sessionId,
+        name: r.user_name || r.user_email.split("@")[0] || "Anonymous",
+        email: r.user_email,
+        score: points,
+        created_at: r.created_at
+      });
+    }
+  });
+
+  return Array.from(participantMap.values()).sort(
+    (a, b) => b.score - a.score || a.name.localeCompare(b.name)
+  );
 }
 
 export async function getAttemptedParticipantsCount(sessionId: string): Promise<number> {
@@ -1529,18 +1985,58 @@ export async function calculateScores(
 
       if (rError) throw rError;
 
-      // 3. Find participants who answered correctly
+      // 3. Find correct and incorrect responses
       const correctResponses = (responses || []).filter(
-        r => r.value === correctOptionValueStr && r.pulse_participant_id
+        r => r.value === correctOptionValueStr
+      );
+      const incorrectResponses = (responses || []).filter(
+        r => r.value !== correctOptionValueStr
       );
 
-      if (correctResponses.length > 0) {
-        const participantIds = correctResponses.map(r => r.pulse_participant_id);
+      try {
+        // 4. Update the responses table for correct ones
+        if (correctResponses.length > 0) {
+          const correctResponseIds = correctResponses.map(r => r.id);
+          const { error: updateError } = await supabase
+            .from("responses")
+            .update({ is_correct: true, points_awarded: 10 })
+            .in("id", correctResponseIds);
+          if (updateError) throw updateError;
+        }
 
-        // Fetch the participants first:
+        // 5. Update the responses table for incorrect ones
+        if (incorrectResponses.length > 0) {
+          const incorrectResponseIds = incorrectResponses.map(r => r.id);
+          const { error: updateError } = await supabase
+            .from("responses")
+            .update({ is_correct: false, points_awarded: 0 })
+            .in("id", incorrectResponseIds);
+          if (updateError) throw updateError;
+        }
+      } catch (ledgerErr: any) {
+        if (
+          ledgerErr.message?.includes("is_correct") ||
+          ledgerErr.details?.includes("is_correct") ||
+          ledgerErr.message?.includes("column") ||
+          ledgerErr.message?.includes("schema cache")
+        ) {
+          console.warn("\n⚠️  [SUPABASE SCHEMA WARNING]: The responses ledger columns are missing in your Supabase 'responses' table.");
+          console.warn("👉 Please open your Supabase SQL Editor (https://supabase.com/dashboard/project/zseytxmgwmsvrudthpgs/sql/new) and run the script inside 'supabase/migrations/20260527000003_redesign_responses_ledger.sql' to add them!\n");
+          // Legacy retry is skipped for responses table, we fall through to update pulse_participants
+        } else {
+          throw ledgerErr;
+        }
+      }
+
+      // 6. Also update pulse_participants table for compatibility
+      const correctWithParticipantIds = correctResponses.filter(r => r.pulse_participant_id);
+      if (correctWithParticipantIds.length > 0) {
+        const participantIds = correctWithParticipantIds.map(r => r.pulse_participant_id);
+
         const { data: participantsToUpdate, error: pError } = await supabase
           .from("pulse_participants")
           .select("id, score")
+          .eq("session_id", sessionId)
           .in("id", participantIds);
 
         if (!pError && participantsToUpdate) {
@@ -1573,15 +2069,24 @@ export async function calculateScores(
   if (!db.pulse_participants) {
     db.pulse_participants = [];
   }
+  if (!db.responses) {
+    db.responses = [];
+  }
   const mockResponses = db.responses.filter(r => r.question_id === questionId);
-  const correctMockResponses = mockResponses.filter(
-    r => r.value === correctOptionValueStr && r.pulse_participant_id
-  );
-
-  correctMockResponses.forEach(r => {
-    const participant = db.pulse_participants.find(p => p.id === r.pulse_participant_id);
-    if (participant) {
-      participant.score += 10;
+  
+  mockResponses.forEach(r => {
+    if (r.value === correctOptionValueStr) {
+      r.is_correct = true;
+      r.points_awarded = 10;
+      if (r.pulse_participant_id) {
+        const participant = db.pulse_participants.find(p => p.id === r.pulse_participant_id);
+        if (participant) {
+          participant.score += 10;
+        }
+      }
+    } else {
+      r.is_correct = false;
+      r.points_awarded = 0;
     }
   });
 

@@ -2,7 +2,7 @@ import { createBrowserClient } from "@supabase/ssr";
 import { getSupabaseKey, getSupabaseUrl, isSupabaseConfigured } from "@/lib/env";
 
 export function createClient() {
-  if (!isSupabaseConfigured()) {
+  if (!isSupabaseConfigured() || process.env.NEXT_PUBLIC_TEST_MODE === "true") {
     // Return mock client for frontend auth handling
     return {
       auth: {

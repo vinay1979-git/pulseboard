@@ -2,18 +2,26 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { getSupabaseKey, getSupabaseUrl, isSupabaseConfigured } from "@/lib/env";
-import { syncUserProfile } from "@/lib/db";
+import { syncUserProfile, registerParticipant } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
+  
+  // Retrieve session preservation tokens from either cookies or search queries
+  const cookieStore = await cookies();
+  const sessionId = request.nextUrl.searchParams.get("session_id") || cookieStore.get("session_id")?.value;
+  const sessionCode = request.nextUrl.searchParams.get("session_code") || cookieStore.get("session_code")?.value;
+
   // Clean the URL by returning a redirect to /dashboard to strip out large tokens
-  const redirectUrl = new URL("/dashboard", request.url);
+  // If we have a sessionCode, redirect to /session/[code] instead of /dashboard!
+  const redirectUrl = sessionCode 
+    ? new URL(`/session/${sessionCode}`, request.url)
+    : new URL("/dashboard", request.url);
+
   const response = NextResponse.redirect(redirectUrl);
 
   if (code) {
     if (isSupabaseConfigured()) {
-      const cookieStore = await cookies();
-      
       const supabase = createServerClient(getSupabaseUrl(), getSupabaseKey(), {
         cookies: {
           getAll() {
@@ -49,6 +57,28 @@ export async function GET(request: NextRequest) {
           const googleAvatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture;
           // Sync and retrieve User Profile to handle normal flow
           await syncUserProfile(user.id, user.email || "", googleAvatarUrl);
+
+          // If sessionId is present, this user is a participant joining a session!
+          if (sessionId) {
+            const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "Anonymous";
+            const email = user.email || "";
+            
+            try {
+              // Insert participant into database!
+              const participant = await registerParticipant(sessionId, name, email);
+              console.log("Successfully registered participant via OAuth redirect:", participant);
+
+              // Redirect back with the participant_id query parameter so the client registers it in localStorage
+              const finalRedirectUrl = new URL(`/session/${sessionCode || ""}?participant_id=${participant.id}`, request.url);
+              response.headers.set("Location", finalRedirectUrl.toString());
+            } catch (regError) {
+              console.error("Failed to register participant during OAuth callback:", regError);
+            }
+
+            // Delete session cookies on response
+            response.cookies.delete("session_id");
+            response.cookies.delete("session_code");
+          }
 
           // Critical RBAC Step: Explicitly assert Vinay's super-admin status
           if (user.email && user.email.toLowerCase() === "vinay1979@gmail.com") {

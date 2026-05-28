@@ -127,6 +127,41 @@ export default function ParticipantLoginPage() {
     }
   };
 
+  const signInWithGoogleOAuth = async () => {
+    if (!session) return;
+    setAuthLoading(true);
+    setErrorMsg("");
+
+    if (process.env.NEXT_PUBLIC_TEST_MODE === "true") {
+      await handleRegistration("Playwright Tester", "test@example.com");
+      return;
+    }
+
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+
+      // Cache session details in Lax cookies to survive standard Google OAuth loops
+      document.cookie = `session_id=${session.id}; path=/; max-age=3600; SameSite=Lax; Secure`;
+      document.cookie = `session_code=${code}; path=/; max-age=3600; SameSite=Lax; Secure`;
+
+      const redirectTo = `${window.location.origin}/auth/callback?session_id=${session.id}&session_code=${code}`;
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo,
+        },
+      });
+
+      if (error) throw error;
+    } catch (e: any) {
+      console.error("Google OAuth Sign-In failed:", e);
+      setErrorMsg(e.message || "Failed to trigger Google OAuth.");
+      setAuthLoading(false);
+    }
+  };
+
   const handleSimulatedSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !email.trim()) return;
@@ -203,108 +238,17 @@ export default function ParticipantLoginPage() {
               <Loader2 className="size-8 animate-spin text-cyan-400" />
               <p className="mt-4 text-xs text-slate-400 font-extrabold uppercase tracking-widest animate-pulse">Authenticating...</p>
             </div>
-          ) : googleClientId ? (
-            /* 1. Google OAuth Client Form */
-            <div className="space-y-6">
-              <div className="flex justify-center" id="google-signin-btn" />
-              <div className="relative flex py-2 items-center">
-                <div className="flex-grow border-t border-white/5"></div>
-                <span className="flex-shrink mx-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Or Simulate OAuth</span>
-                <div className="flex-grow border-t border-white/5"></div>
-              </div>
-              
-              {/* Optional Form Fallback for Quick Testing */}
-              <form onSubmit={handleSimulatedSubmit} className="space-y-4">
-                <div className="space-y-1">
-                  <label htmlFor="sim-name" className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest block">Simulated Full Name</label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
-                    <Input
-                      id="sim-name"
-                      required
-                      placeholder="e.g. John Doe"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="pl-9 h-11 bg-slate-950/40 border-white/5 text-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label htmlFor="sim-email" className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest block">Simulated Gmail</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
-                    <Input
-                      id="sim-email"
-                      type="email"
-                      required
-                      placeholder="e.g. john@gmail.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="pl-9 h-11 bg-slate-950/40 border-white/5 text-white"
-                    />
-                  </div>
-                </div>
-
-                <Button
-                  type="submit"
-                  className="w-full h-11 text-xs font-black uppercase tracking-wider bg-slate-800 hover:bg-slate-750 text-white flex items-center justify-center gap-1.5 cursor-pointer shadow"
-                >
-                  <Send className="size-3.5 text-cyan-400" />
-                  Simulate Gmail Auth
-                </Button>
-              </form>
-            </div>
           ) : (
-            /* 2. Simulated Login Form for Offline Dev environments */
-            <form onSubmit={handleSimulatedSubmit} className="space-y-4">
-              <div className="rounded-lg bg-cyan-400/5 border border-cyan-400/20 p-4 mb-2 text-center">
-                <span className="text-[9px] font-black text-cyan-400 uppercase tracking-wider block">Local Simulation Active</span>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Offline mode detected. Provide a mock name and email below to register on the Leaderboard instantly.
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <label htmlFor="participant-name" className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest block">Full Name</label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
-                  <Input
-                    id="participant-name"
-                    required
-                    placeholder="e.g. Jane Doe"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="pl-9 h-11 bg-slate-950/40 border-white/5 text-white"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label htmlFor="participant-email" className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest block">Gmail Address</label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
-                  <Input
-                    id="participant-email"
-                    type="email"
-                    required
-                    placeholder="e.g. jane.doe@gmail.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="pl-9 h-11 bg-slate-950/40 border-white/5 text-white"
-                  />
-                </div>
-              </div>
-
+            <div className="space-y-6">
               <Button
-                type="submit"
-                disabled={!name.trim() || !email.trim()}
-                className="w-full h-12 text-sm font-extrabold bg-cyan-500 hover:bg-cyan-600 text-slate-950 flex items-center justify-center gap-2 group shadow-lg shadow-cyan-500/10 cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
+                type="button"
+                onClick={signInWithGoogleOAuth}
+                className="w-full h-12 text-sm font-black uppercase tracking-wider bg-cyan-500 hover:bg-cyan-600 text-slate-950 flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-cyan-500/10"
               >
-                Simulate Gmail Login
-                <Send className="size-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 text-slate-950" />
+                <Sparkles className="size-4 text-slate-950 animate-pulse" />
+                Join with Google (OAuth)
               </Button>
-            </form>
+            </div>
           )}
         </motion.div>
       </div>

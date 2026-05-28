@@ -45,6 +45,13 @@ export interface Response {
   value: string; // Option index or word text
   created_at: string;
   pulse_participant_id?: string | null;
+  session_id?: string | null;
+  user_email?: string | null;
+  user_name?: string | null;
+  selected_option?: string | null;
+  is_correct?: boolean;
+  points_awarded?: number;
+  status?: string;
 }
 
 export interface UserProfile {

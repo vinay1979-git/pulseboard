@@ -34,6 +34,24 @@ export default function SessionAudiencePage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const handleLogout = async () => {
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      
+      // Clear participant storage keys
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(`pulse-participant-${code}`);
+        window.localStorage.removeItem(`pulseboard-session-${code}-participant`);
+      }
+      
+      router.push(`/session/${code}/login`);
+    } catch (e) {
+      console.error("Logout failed:", e);
+    }
+  };
+
   const participantId = useMemo(() => {
     if (typeof window === "undefined") return "";
     const key = `pulse-participant-${code}`;
@@ -45,12 +63,13 @@ export default function SessionAudiencePage() {
   const [selectedOption, setSelectedOption] = useState<string>("");
   const [wordValue, setWordValue] = useState<string>("");
   const [hasVoted, setHasVoted] = useState<boolean>(false);
+  const [hasSubmitted, setHasSubmitted] = useState<boolean>(false);
   const [sessionStatus, setSessionStatus] = useState<"active" | "inactive">("active");
   const [timerSecondsLeft, setTimerSecondsLeft] = useState<number | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const currentQuestion = liveBatch[currentQuestionIndex] || null;
-  const isInputLocked = hasVoted || (timerSecondsLeft !== null && timerSecondsLeft <= 0);
+  const isInputLocked = hasVoted || hasSubmitted || (timerSecondsLeft !== null && timerSecondsLeft <= 0);
 
   const loadData = async () => {
     try {
@@ -64,8 +83,12 @@ export default function SessionAudiencePage() {
       // Auth Guard Redirect for Gmail Login Modes
       if (activeSession.auth_mode === "gmail" || activeSession.auth_mode === "quiz_gmail") {
         if (typeof window !== "undefined") {
+          const { createClient } = await import("@/lib/supabase/client");
+          const supabase = createClient();
+          const { data: { user } } = await supabase.auth.getUser();
+
           const storedParticipantId = window.localStorage.getItem(`pulse-participant-${code}`);
-          if (!storedParticipantId) {
+          if (!user || !storedParticipantId) {
             router.push(`/session/${code}/login`);
             return;
           }
@@ -104,10 +127,12 @@ export default function SessionAudiencePage() {
         if (firstUnvotedIndex !== -1) {
           setCurrentQuestionIndex(firstUnvotedIndex);
           setHasVoted(false);
+          setHasSubmitted(false);
         } else {
           // All questions in the live batch have been answered by this participant
           setCurrentQuestionIndex(0);
           setHasVoted(true);
+          setHasSubmitted(true);
         }
       } else {
         setLiveBatch([]);
@@ -128,6 +153,19 @@ export default function SessionAudiencePage() {
   }, [liveBatch]);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlPartId = urlParams.get("participant_id");
+      if (urlPartId) {
+        window.localStorage.setItem(`pulse-participant-${code}`, urlPartId);
+        window.localStorage.setItem(`pulseboard-session-${code}-participant`, urlPartId);
+        
+        // Strip the query parameters from the browser window's visible address bar
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    }
+
     void loadData();
 
     const subscription = subscribeToSession(code, (event) => {
@@ -139,6 +177,7 @@ export default function SessionAudiencePage() {
         }
         setTimerSecondsLeft(null);
         setHasVoted(false);
+        setHasSubmitted(false);
         setSelectedOption("");
         setWordValue("");
         void loadData();
@@ -217,12 +256,13 @@ export default function SessionAudiencePage() {
 
   const handleVoteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentQuestion || submitting) return;
+    if (!currentQuestion || submitting || hasSubmitted) return;
 
     const answerValue = currentQuestion.type === "multiple_choice" ? selectedOption : wordValue.trim();
     if (answerValue === "") return;
 
     setSubmitting(true);
+    setHasSubmitted(true); // Lock the UI immediately to prevent double submissions
 
     try {
       if (timerIntervalRef.current) {
@@ -248,12 +288,14 @@ export default function SessionAudiencePage() {
       // Sequentially advance or set completion state
       if (currentQuestionIndex + 1 < liveBatch.length) {
         setCurrentQuestionIndex((prev) => prev + 1);
+        setHasSubmitted(false); // Reset lock for next question in survey
       } else {
         // Last question in the batch has been completed!
         setHasVoted(true);
       }
     } catch (err) {
       console.error("Failed to submit response:", err);
+      setHasSubmitted(false); // Unlock to let them retry on network error
     } finally {
       setSubmitting(false);
     }
@@ -294,9 +336,19 @@ export default function SessionAudiencePage() {
           </span>
           <span className="text-sm font-black text-slate-200">{session?.title}</span>
         </div>
-        <span className="rounded-full bg-cyan-400/10 border border-cyan-400/20 px-3.5 py-1 text-xs font-black tracking-widest text-cyan-400 uppercase">
-          Pin: {code}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="rounded-full bg-cyan-400/10 border border-cyan-400/20 px-3.5 py-1 text-xs font-black tracking-widest text-cyan-400 uppercase">
+            Pin: {code}
+          </span>
+          {(session?.auth_mode === "gmail" || session?.auth_mode === "quiz_gmail") && (
+            <button
+              onClick={handleLogout}
+              className="text-[10px] font-black uppercase tracking-wider bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
+            >
+              Logout
+            </button>
+          )}
+        </div>
       </nav>
 
       {/* Interactive Form Panel */}

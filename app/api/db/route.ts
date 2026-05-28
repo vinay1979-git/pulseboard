@@ -20,7 +20,8 @@ export async function POST(req: NextRequest) {
             { status: 400 }
           );
         }
-        return NextResponse.json(await db.createSession(args.userId, title, args.authMode, args.autoLaunch, args.timerSeconds));
+        const timerSeconds = parseInt(args.timerSeconds as any, 10) || 0;
+        return NextResponse.json(await db.createSession(args.userId, title, args.authMode, args.autoLaunch, timerSeconds));
       }
       case "updateSessionStatus":
         await db.updateSessionStatus(args.sessionId, args.status as SessionStatus);
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
         await db.updateSessionTitle(args.sessionId, args.title);
         return NextResponse.json({ success: true });
       case "updateSessionAutoLaunch":
-        await db.updateSessionAutoLaunch(args.sessionId, args.autoLaunch, args.timerSeconds);
+        await db.updateSessionAutoLaunch(args.sessionId, args.autoLaunch, parseInt(args.timerSeconds as any, 10) || 0);
         return NextResponse.json({ success: true });
       case "reorderQuestions":
         await db.reorderQuestions(args.sessionId, args.questionIds);
