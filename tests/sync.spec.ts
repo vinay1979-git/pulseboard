@@ -71,12 +71,12 @@ test.describe("Multi-Browser Host & Participant Sync E2E Tests", () => {
     await audiencePage.click('button:has-text("Submit Answer")');
 
     // 6. Verify Idempotency UI Lock
-    // Assert options and submit buttons are immediately disabled
-    await expect(audiencePage.locator('button:has-text("Option 1")')).toBeDisabled();
-    await expect(audiencePage.locator('button:has-text("Submit Answer")')).toBeDisabled();
-    
     // Assert thank you message is visible
     await expect(audiencePage.locator("text=Thank you! Your feedback has been safely submitted")).toBeVisible();
+    
+    // Assert options and submit buttons are now unmounted
+    await expect(audiencePage.locator('button:has-text("Option 1")')).not.toBeVisible();
+    await expect(audiencePage.locator('button:has-text("Submit Answer")')).not.toBeVisible();
 
     // 7. Verify Presenter Console Leaderboard Instantly Updates with score
     // The participant name is "Playwright Tester" and correct MC option index 0 was chosen, yielding 10 pts
