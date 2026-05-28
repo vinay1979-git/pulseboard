@@ -43,27 +43,26 @@ export function createClient() {
   const client = createBrowserClient(getSupabaseUrl(), getSupabaseKey());
 
   if (process.env.NEXT_PUBLIC_TEST_MODE === "true") {
+    const mockUser = {
+      id: "demo-user-id",
+      email: "vinay1979@gmail.com",
+      user_metadata: {
+        full_name: "Vinay Visvanathan",
+        name: "Vinay Visvanathan"
+      }
+    };
     client.auth = {
       getUser: async () => {
-        return {
-          data: {
-            user: {
-              id: "demo-user-id",
-              email: "vinay1979@gmail.com",
-              user_metadata: {
-                full_name: "Vinay Visvanathan",
-                name: "Vinay Visvanathan"
-              }
-            }
-          },
-          error: null
-        };
+        return { data: { user: mockUser }, error: null };
+      },
+      getSession: async () => {
+        return { data: { session: { user: mockUser } }, error: null };
       },
       signInWithPassword: async () => {
-        return { data: { session: {} }, error: null };
+        return { data: { session: { user: mockUser } }, error: null };
       },
       signUp: async () => {
-        return { data: { session: {} }, error: null };
+        return { data: { session: { user: mockUser } }, error: null };
       },
       signInWithOAuth: async () => {
         if (typeof window !== "undefined") {
@@ -73,6 +72,9 @@ export function createClient() {
       },
       signOut: async () => {
         return { error: null };
+      },
+      onAuthStateChange: () => {
+        return { data: { subscription: { unsubscribe: () => {} } } };
       }
     } as any;
   }
