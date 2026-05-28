@@ -8,7 +8,9 @@ test.describe("Presenter Console State Machine E2E Tests", () => {
 
     // 1. Authenticate Presenter (Test Mode Bypass)
     await page.goto("/login");
-    await page.click('button:has-text("Continue with Google")');
+    if (page.url().includes("/login")) {
+      await page.click('button:has-text("Continue with Google")');
+    }
     await expect(page).toHaveURL(/\/dashboard/);
 
     // 2. Create a New PulseRoom

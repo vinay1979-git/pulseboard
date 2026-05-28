@@ -10,7 +10,9 @@ test.describe("Multi-Browser Host & Participant Sync E2E Tests", () => {
 
     // Authenticate Presenter
     await presenterPage.goto("/login");
-    await presenterPage.click('button:has-text("Continue with Google")');
+    if (presenterPage.url().includes("/login")) {
+      await presenterPage.click('button:has-text("Continue with Google")');
+    }
     await expect(presenterPage).toHaveURL(/\/dashboard/);
 
     // Create a new room with Quiz auth mode to enable correct answers
