@@ -1,4 +1,5 @@
 import { pusherClient } from "./pusherClient";
+import { getSessionByCode, getQuestions, getResponses } from "./clientDb";
 
 export interface RealtimeEvent {
   type:
@@ -241,40 +242,27 @@ export function subscribeToSession(
 
   const pollState = async () => {
     try {
-      const response = await fetch("/api/db", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "getSessionByCode", code: sessionCode }),
-      });
-      if (!response.ok) return;
-      const session = await response.json();
-      if (!session) return;
+      const session = await getSessionByCode(sessionCode);
+      if (!session) {
+        console.log(`[realtime pollState] session not found for code: ${sessionCode}`);
+        return;
+      }
 
-      const questionsResponse = await fetch("/api/db", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "getQuestions", sessionId: session.id }),
-      });
-      if (!questionsResponse.ok) return;
-      const questions = await questionsResponse.json();
+      const questions = await getQuestions(session.id);
 
       // Hash the live state (live question ID, session status, response counts)
       const liveQuestion = questions.find((q: any) => q.is_live);
       let stateString = `${session.status}-${liveQuestion?.id ?? "none"}`;
 
       if (liveQuestion) {
-        const resResponse = await fetch("/api/db", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "getResponses", questionId: liveQuestion.id }),
-        });
-        if (resResponse.ok) {
-          const resps = await resResponse.json();
-          stateString += `-${resps.length}-${JSON.stringify(resps.map((r: any) => r.value).sort())}`;
-        }
+        const resps = await getResponses(liveQuestion.id);
+        stateString += `-${resps.length}-${JSON.stringify(resps.map((r: any) => r.value).sort())}`;
       }
 
+      console.log(`[realtime pollState] code=${sessionCode} stateString=${stateString} lastStateString=${lastStateString}`);
+
       if (lastStateString !== "" && lastStateString !== stateString) {
+        console.log(`[realtime pollState] State changed! Triggering UI update event.`);
         // Trigger a generic update event to wake up the subscriber UI
         onEvent({
           type: "question_live",
@@ -282,8 +270,8 @@ export function subscribeToSession(
         });
       }
       lastStateString = stateString;
-    } catch (e) {
-      // Quiet fail to avoid polluting console
+    } catch (e: any) {
+      console.error(`[realtime pollState] Error polling state for code ${sessionCode}:`, e.message || e);
     }
   };
 

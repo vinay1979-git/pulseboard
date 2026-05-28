@@ -8,6 +8,9 @@ test.describe("Multi-Browser Host & Participant Sync E2E Tests", () => {
     const presenterContext = await browser.newContext();
     const presenterPage = await presenterContext.newPage();
 
+    presenterPage.on("console", (msg) => console.log(`[Presenter Log] ${msg.text()}`));
+    presenterPage.on("pageerror", (err) => console.log(`[Presenter Error] ${err.message}`));
+
     // Authenticate Presenter
     await presenterPage.goto("/login");
     if (presenterPage.url().includes("/login")) {
@@ -39,6 +42,9 @@ test.describe("Multi-Browser Host & Participant Sync E2E Tests", () => {
     // 2. Setup Participant (Audience) Context and Page
     const audienceContext = await browser.newContext();
     const audiencePage = await audienceContext.newPage();
+
+    audiencePage.on("console", (msg) => console.log(`[Audience Log] ${msg.text()}`));
+    audiencePage.on("pageerror", (err) => console.log(`[Audience Error] ${err.message}`));
 
     // Navigate to participant login gateway
     await audiencePage.goto(`/session/${code}/login`);
