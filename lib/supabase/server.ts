@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { getSupabaseKey, getSupabaseUrl, isSupabaseConfigured } from "@/lib/env";
 
 export async function createClient() {
-  if (!isSupabaseConfigured() || process.env.NEXT_PUBLIC_TEST_MODE === "true") {
+  if (!isSupabaseConfigured()) {
     // Return a mock client that satisfies the auth.getUser() calls safely
     return {
       auth: {
@@ -32,7 +32,7 @@ export async function createClient() {
 
   const cookieStore = await cookies();
 
-  return createServerClient(getSupabaseUrl(), getSupabaseKey(), {
+  const client = createServerClient(getSupabaseUrl(), getSupabaseKey(), {
     cookies: {
       getAll() {
         return cookieStore.getAll();
@@ -48,6 +48,31 @@ export async function createClient() {
       },
     },
   });
+
+  if (process.env.NEXT_PUBLIC_TEST_MODE === "true") {
+    client.auth = {
+      getUser: async () => {
+        return {
+          data: {
+            user: {
+              id: "demo-user-id",
+              email: "vinay1979@gmail.com",
+              user_metadata: {
+                full_name: "Vinay Visvanathan",
+                name: "Vinay Visvanathan"
+              }
+            }
+          },
+          error: null
+        };
+      },
+      signOut: async () => {
+        return { error: null };
+      }
+    } as any;
+  }
+
+  return client;
 }
 
 export function createAdminClient() {
