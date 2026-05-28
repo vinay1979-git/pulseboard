@@ -155,7 +155,8 @@ export default function HostConsolePage() {
   const [mcOptions, setMcOptions] = useState<string[]>(["Option 1", "Option 2"]);
   const [correctOption, setCorrectOption] = useState<number | null>(null);
   const [timerSecondsLeft, setTimerSecondsLeft] = useState<number | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [configuredDuration, setConfiguredDuration] = useState<number>(0);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const getAudienceUrl = () => {
@@ -210,6 +211,11 @@ export default function HostConsolePage() {
       setSession(current => current ? { ...current, auto_launch: true, timer_seconds: parsedDuration } : null);
       setShowAutoLaunchModal(false);
       
+      // Step 1: Set BOTH states to the validated input integer simultaneously before activating the countdown mode state
+      setConfiguredDuration(parsedDuration);
+      setTimeLeft(parsedDuration);
+      setConsoleMode("auto");
+      
       await handleSetQuestionLive(questions[0].id);
       
       setActionMessage(`Auto-launch loop successfully triggered with ${parsedDuration}s timer!`);
@@ -256,6 +262,10 @@ export default function HostConsolePage() {
       setSession(current => current ? { ...current, auto_launch: true, timer_seconds: parsedDuration } : null);
       
       setIsAutoLaunchConfigExpanded(false);
+      
+      // Step 1: Set BOTH states to the validated input integer simultaneously before activating the countdown mode state
+      setConfiguredDuration(parsedDuration);
+      setTimeLeft(parsedDuration);
       setConsoleMode("auto");
       
       await handleSetQuestionLive(questions[0].id);
@@ -308,7 +318,7 @@ export default function HostConsolePage() {
         setSession(current => current ? { ...current, auto_launch: false, timer_seconds: 0 } : null);
         
         setTimerSecondsLeft(null);
-        setTimeLeft(0);
+        setTimeLeft(null);
         setIsAutoLaunchPaused(false);
         setActiveQuestion(null);
         setConsoleMode("idle");
@@ -452,7 +462,7 @@ export default function HostConsolePage() {
         timerIntervalRef.current = null;
       }
       setTimerSecondsLeft(null);
-      setTimeLeft(0);
+      setTimeLeft(null);
       setIsAutoLaunchPaused(false);
 
       // 3. Complete current live question immediately
@@ -750,27 +760,33 @@ export default function HostConsolePage() {
     void handleAutoProgress(target.id);
   };
 
-  const isAutoLaunchActive = consoleMode === "auto" && !isAutoLaunchPaused;
+  const activeQuestionId = activeQuestion?.id || null;
+  const handleAutoProgression = () => {
+    void triggerNextQuestion();
+  };
 
   useEffect(() => {
-    if (!isAutoLaunchActive || timeLeft <= 0) return;
+    if (consoleMode !== 'auto' || timeLeft === null) return;
 
-    const interval = setInterval(() => {
-      setTimeLeft((prevTime) => {
-        if (prevTime <= 1) {
-          clearInterval(interval);
-          void triggerNextQuestion(); // Move to next
+    const intervalId = setInterval(() => {
+      if (isAutoLaunchPausedRef.current) return;
+      setTimeLeft((prevSeconds) => {
+        if (prevSeconds === null) return null;
+        // If time runs out, clear interval and advance the question
+        if (prevSeconds <= 1) {
+          clearInterval(intervalId);
+          handleAutoProgression();
           return 0;
         }
-        return prevTime - 1;
+        return prevSeconds - 1;
       });
     }, 1000);
 
-    return () => clearInterval(interval);
-  }, [isAutoLaunchActive, timeLeft]);
+    return () => clearInterval(intervalId);
+  }, [consoleMode, activeQuestionId]); // Depend on ID changes to restart the interval natively
 
   useEffect(() => {
-    setTimerSecondsLeft(timeLeft > 0 ? timeLeft : null);
+    setTimerSecondsLeft(timeLeft !== null && timeLeft > 0 ? timeLeft : null);
   }, [timeLeft]);
 
   useEffect(() => {
@@ -932,7 +948,7 @@ export default function HostConsolePage() {
         setSession(current => current ? { ...current, auto_launch: false, timer_seconds: 0 } : null);
         
         setTimerSecondsLeft(null);
-        setTimeLeft(0);
+        setTimeLeft(null);
         setIsAutoLaunchPaused(false);
         setActiveQuestion(null);
         setConsoleMode("idle");
@@ -954,7 +970,7 @@ export default function HostConsolePage() {
         timerIntervalRef.current = null;
       }
       setTimerSecondsLeft(null);
-      setTimeLeft(0);
+      setTimeLeft(null);
 
       await clientDb.setQuestionLive(session.id, questionId);
       
@@ -991,6 +1007,7 @@ export default function HostConsolePage() {
       const duration = parseInt(session.timer_seconds as any, 10) || 0;
       if (session.auto_launch && duration > 0) {
         setTimerSecondsLeft(duration);
+        setConfiguredDuration(duration);
         setTimeLeft(duration);
 
         // Broadcast timer start
