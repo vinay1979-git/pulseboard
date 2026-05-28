@@ -50,6 +50,29 @@ export async function proxy(request: NextRequest) {
       },
     },
   });
+  
+  if (process.env.NEXT_PUBLIC_TEST_MODE === "true") {
+    const mockUser = {
+      id: "demo-user-id",
+      email: "vinay1979@gmail.com",
+      user_metadata: {
+        full_name: "Vinay Visvanathan",
+        name: "Vinay Visvanathan"
+      }
+    };
+    Object.defineProperty(supabase, "auth", {
+      value: {
+        getUser: async () => {
+          return { data: { user: mockUser }, error: null };
+        },
+        getSession: async () => {
+          return { data: { session: { user: mockUser } }, error: null };
+        }
+      },
+      writable: true,
+      configurable: true
+    });
+  }
 
   // Use supabase.auth.getUser() to read cookies and update session
   const {
