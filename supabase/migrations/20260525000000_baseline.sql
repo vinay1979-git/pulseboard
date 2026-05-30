@@ -1,22 +1,22 @@
 -- Create profiles table
 CREATE TABLE IF NOT EXISTS profiles (
-  id VARCHAR(255) PRIMARY KEY,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  role VARCHAR(50) DEFAULT 'power-user',
-  approval_status VARCHAR(50) DEFAULT 'pending',
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT UNIQUE NOT NULL,
+  role TEXT DEFAULT 'power-user' CHECK (role IN ('super-admin', 'power-user')),
+  approval_status TEXT DEFAULT 'pending' CHECK (approval_status IN ('pending', 'approved')),
   avatar_url TEXT DEFAULT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
 -- Create sessions table
 CREATE TABLE IF NOT EXISTS sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  code VARCHAR(10) UNIQUE NOT NULL,
-  title VARCHAR(255) NOT NULL,
-  status VARCHAR(50) DEFAULT 'inactive',
-  created_by VARCHAR(255) NOT NULL,
-  updated_by VARCHAR(255) DEFAULT NULL,
+  code VARCHAR(6) UNIQUE NOT NULL,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active', 'inactive')),
+  created_by TEXT NOT NULL,
+  updated_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
   last_live_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
@@ -26,10 +26,10 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS questions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  type VARCHAR(50) NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('multiple_choice', 'word_cloud')),
   prompt_text TEXT NOT NULL,
-  options TEXT[] DEFAULT '{}',
-  is_live BOOLEAN DEFAULT false,
+  options TEXT[] NOT NULL DEFAULT '{}',
+  is_live BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
   order_index INTEGER DEFAULT 0
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS questions (
 CREATE TABLE IF NOT EXISTS responses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
-  participant_id VARCHAR(255) NOT NULL,
+  participant_id TEXT NOT NULL,
   value TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
