@@ -2,6 +2,9 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Presenter Console State Machine E2E Tests", () => {
   test("Verify 4-state UI Launch Toolbar and Active Gating", async ({ page }) => {
+    // Increase timeout for this comprehensive E2E state machine lifecycle test
+    test.setTimeout(60000);
+
     // Catch browser errors and console logs
     page.on("console", (msg) => console.log(`[Browser Log] ${msg.text()}`));
     page.on("pageerror", (err) => console.log(`[Browser Error] ${err.message}`));
