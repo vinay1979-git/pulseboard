@@ -783,7 +783,7 @@ export default function HostConsolePage() {
     }, 1000);
 
     return () => clearInterval(intervalId);
-  }, [consoleMode, activeQuestionId]); // Depend on ID changes to restart the interval natively
+  }, [consoleMode, activeQuestionId, timeLeft === null]); // Depend on ID changes and active timer status to restart the interval natively
 
   useEffect(() => {
     setTimerSecondsLeft(timeLeft !== null && timeLeft > 0 ? timeLeft : null);
