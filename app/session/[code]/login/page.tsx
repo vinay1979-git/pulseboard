@@ -145,7 +145,7 @@ export default function ParticipantLoginPage() {
       document.cookie = `session_id=${session.id}; path=/; max-age=3600; SameSite=Lax; Secure`;
       document.cookie = `session_code=${code}; path=/; max-age=3600; SameSite=Lax; Secure`;
 
-      const redirectTo = `${window.location.origin}/auth/callback?session_id=${session.id}&session_code=${code}`;
+      const redirectTo = `${window.location.origin}/auth/callback?next=/session/${code}&session_id=${session.id}&session_code=${code}`;
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",

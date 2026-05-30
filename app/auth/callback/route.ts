@@ -12,12 +12,16 @@ export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get("session_id") || cookieStore.get("session_id")?.value;
   const sessionCode = request.nextUrl.searchParams.get("session_code") || cookieStore.get("session_code")?.value;
 
-  // Clean the URL by returning a redirect to /dashboard to strip out large tokens
-  // If we have a sessionCode, redirect to /session/[code] instead of /dashboard!
-  const redirectUrl = sessionCode 
-    ? new URL(`/session/${sessionCode}`, request.url)
-    : new URL("/dashboard", request.url);
+  // Clean the URL by returning a redirect to the target URL (next, session, or dashboard) to strip out large tokens
+  const next = request.nextUrl.searchParams.get("next") || request.nextUrl.searchParams.get("redirectTo");
+  let redirectPath = "/dashboard";
+  if (next) {
+    redirectPath = next;
+  } else if (sessionCode) {
+    redirectPath = `/session/${sessionCode}`;
+  }
 
+  const redirectUrl = new URL(redirectPath, request.url);
   const response = NextResponse.redirect(redirectUrl);
 
   if (code) {
@@ -69,7 +73,8 @@ export async function GET(request: NextRequest) {
               console.log("Successfully registered participant via OAuth redirect:", participant);
 
               // Redirect back with the participant_id query parameter so the client registers it in localStorage
-              const finalRedirectUrl = new URL(`/session/${sessionCode || ""}?participant_id=${participant.id}`, request.url);
+              const targetBase = next ? next : `/session/${sessionCode || ""}`;
+              const finalRedirectUrl = new URL(`${targetBase}${targetBase.includes("?") ? "&" : "?"}participant_id=${participant.id}`, request.url);
               response.headers.set("Location", finalRedirectUrl.toString());
             } catch (regError) {
               console.error("Failed to register participant during OAuth callback:", regError);
