@@ -1515,6 +1515,28 @@ export async function approveUser(userId: string): Promise<void> {
   }
 }
 
+export async function declineUser(userId: string): Promise<void> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = await createServerClient();
+      const { error } = await supabase
+        .from("profiles")
+        .delete()
+        .eq("id", userId);
+      if (error) throw error;
+    } catch (e) {
+      logDbError("declineUser", e);
+      throw e;
+    }
+  } else {
+    // Local mock fallback
+    const idx = db.profiles.findIndex(p => p.id === userId);
+    if (idx !== -1) {
+      db.profiles.splice(idx, 1);
+    }
+  }
+}
+
 export async function manuallyAddUser(email: string): Promise<UserProfile> {
   const sanitizedEmail = email.trim().toLowerCase();
   const userId = `p-invited-${crypto.randomUUID()}`;

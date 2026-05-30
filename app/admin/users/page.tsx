@@ -86,6 +86,23 @@ export default function UserManagementPage() {
     }
   };
 
+  const handleDeclineUser = async (userId: string, userEmail: string) => {
+    if (!confirm(`Are you sure you want to permanently decline and delete "${userEmail}"? This cannot be undone.`)) return;
+    try {
+      await clientDb.declineUser(userId);
+      
+      // Optimistic state update — remove from list entirely
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
+      
+      setActionMessage(`Account for ${userEmail} has been declined and removed.`);
+      setTimeout(() => setActionMessage(""), 3000);
+    } catch (err) {
+      console.error("Failed to decline user:", err);
+      setActionMessage("Error: Failed to decline user.");
+      setTimeout(() => setActionMessage(""), 3000);
+    }
+  };
+
   const handleInviteUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteEmail.trim() || inviting) return;
@@ -178,13 +195,22 @@ export default function UserManagementPage() {
                             </span>
                           </td>
                           <td className="py-4 text-right">
-                            <Button
-                              onClick={() => handleApproveUser(user.id)}
-                              className="h-9 px-4 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 ml-auto cursor-pointer"
-                            >
-                              <UserCheck className="size-3.5" />
-                              Approve
-                            </Button>
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                onClick={() => handleDeclineUser(user.id, user.email)}
+                                className="h-9 px-4 bg-red-500/20 hover:bg-red-500 border border-red-500/30 hover:border-red-500 text-red-400 hover:text-slate-950 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer transition-all duration-150"
+                              >
+                                <UserX className="size-3.5" />
+                                Decline
+                              </Button>
+                              <Button
+                                onClick={() => handleApproveUser(user.id)}
+                                className="h-9 px-4 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <UserCheck className="size-3.5" />
+                                Approve
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       ))}

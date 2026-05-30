@@ -88,6 +88,9 @@ export async function POST(req: NextRequest) {
       case "approveUser":
         await db.approveUser(args.userId);
         return NextResponse.json({ success: true });
+      case "declineUser":
+        await db.declineUser(args.userId);
+        return NextResponse.json({ success: true });
       case "manuallyAddUser":
         return NextResponse.json(await db.manuallyAddUser(args.email));
       default:

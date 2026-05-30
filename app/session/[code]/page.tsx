@@ -87,10 +87,28 @@ export default function SessionAudiencePage() {
           const supabase = createClient();
           const { data: { user } } = await supabase.auth.getUser();
 
-          const storedParticipantId = window.localStorage.getItem(`pulse-participant-${code}`);
-          if (!user || !storedParticipantId) {
+          if (!user) {
+            // No session at all — send to login
             router.push(`/session/${code}/login`);
             return;
+          }
+
+          const storedParticipantId = window.localStorage.getItem(`pulse-participant-${code}`);
+          if (!storedParticipantId) {
+            // User IS authenticated but doesn't have a participant entry.
+            // This happens when cookie-setting fails during the OAuth callback redirect.
+            // Auto-register them directly so they're not stuck in a redirect loop.
+            try {
+              const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "Attendee";
+              const email = user.email || "";
+              const participant = await clientDb.registerParticipant(activeSession.id, name, email);
+              window.localStorage.setItem(`pulse-participant-${code}`, participant.id);
+              window.localStorage.setItem(`pulseboard-session-${code}-participant`, participant.id);
+            } catch (regErr) {
+              console.error("Auto-registration failed, sending to login:", regErr);
+              router.push(`/session/${code}/login`);
+              return;
+            }
           }
         }
       }

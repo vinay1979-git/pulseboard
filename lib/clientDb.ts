@@ -131,6 +131,10 @@ export async function approveUser(userId: string): Promise<void> {
   return apiCall("approveUser", { userId });
 }
 
+export async function declineUser(userId: string): Promise<void> {
+  return apiCall("declineUser", { userId });
+}
+
 export async function manuallyAddUser(email: string): Promise<UserProfile> {
   return apiCall("manuallyAddUser", { email });
 }
