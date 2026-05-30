@@ -766,14 +766,21 @@ export default function HostConsolePage() {
   };
 
   useEffect(() => {
-    if (consoleMode !== 'auto' || timeLeft === null) return;
+    console.log(`[countdown useEffect] Mounted/Triggered: consoleMode=${consoleMode} timeLeft=${timeLeft} activeQuestionId=${activeQuestionId}`);
+    if (consoleMode !== 'auto' || timeLeft === null) {
+      console.log(`[countdown useEffect] Returning early: consoleMode !== auto or timeLeft === null`);
+      return;
+    }
 
     const intervalId = setInterval(() => {
+      console.log(`[countdown useEffect tick] isPaused=${isAutoLaunchPausedRef.current}`);
       if (isAutoLaunchPausedRef.current) return;
       setTimeLeft((prevSeconds) => {
+        console.log(`[countdown useEffect tick setTimeLeft] prevSeconds=${prevSeconds}`);
         if (prevSeconds === null) return null;
         // If time runs out, clear interval and advance the question
         if (prevSeconds <= 1) {
+          console.log(`[countdown useEffect tick] Timer reached <= 1. Advancing!`);
           clearInterval(intervalId);
           handleAutoProgression();
           return 0;
@@ -782,7 +789,10 @@ export default function HostConsolePage() {
       });
     }, 1000);
 
-    return () => clearInterval(intervalId);
+    return () => {
+      console.log(`[countdown useEffect] Cleaning up intervalId: ${intervalId}`);
+      clearInterval(intervalId);
+    };
   }, [consoleMode, activeQuestionId, timeLeft === null]); // Depend on ID changes and active timer status to restart the interval natively
 
   useEffect(() => {
