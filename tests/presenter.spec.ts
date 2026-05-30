@@ -70,13 +70,18 @@ test.describe("Presenter Console State Machine E2E Tests", () => {
     await expect(page.locator('button:has-text("Start Manual")')).toBeVisible();
     await expect(page.locator('button:has-text("Auto-Launch")')).toBeVisible();
 
-    // State D: Auto-Launch Countdown & Controls
+    // State D: Auto-Launch Countdown & Controls (Rigorous Lifecycle Verification)
+    
+    // Test Case 1: Initial Frame Verification (The "Zero-Second" Prevention Bug)
     await page.click('button:has-text("Auto-Launch")');
-    await page.fill('input[type="number"]', "45");
+    await page.fill('input[type="number"]', "15");
     await page.click('button:has-text("Start")');
     
-    // Verify auto mode is active with Pause, Skip, and Cancel buttons visible
+    // Immediately assert that the UI contains the exact initial duration and doesn't flash 0s
     await expect(page.locator("text=AUTO-LIVE: Q1")).toBeVisible();
+    await expect(page.locator("text=AUTO-LIVE: Q1")).toContainText(/\(⏱️ 15s remaining\)/);
+    
+    // Verify auto mode is active with Pause, Skip, and Cancel buttons visible
     await expect(page.locator('button:has-text("Pause")')).toBeVisible();
     await expect(page.locator('button:has-text("Skip to Next")')).toBeVisible();
     await expect(page.locator('button:has-text("Cancel")')).toBeVisible();
@@ -87,8 +92,43 @@ test.describe("Presenter Console State Machine E2E Tests", () => {
     await page.click('button:has-text("Resume")');
     await expect(page.locator('button:has-text("Pause")')).toBeVisible();
 
-    // Cancel Auto-Launch countdown
+    // Test Case 2: Sequential Time Decrement
+    // Verify the timer ticks downward smoothly
+    await page.waitForTimeout(2000);
+    // It should have ticked down to 13s or 14s
+    await expect(page.locator("text=AUTO-LIVE: Q1")).toContainText(/\(⏱️ 1[34]s remaining\)/);
+
+    // Cancel the first loop so we can test the next cases cleanly
     await page.click('button:has-text("Cancel")');
     await expect(page.locator('button:has-text("Start Manual")')).toBeVisible();
+
+    // Test Case 3: Zero-Trigger Progression and Lifecycle
+    await page.click('button:has-text("Auto-Launch")');
+    await page.fill('input[type="number"]', "10");
+    await page.click('button:has-text("Start")');
+
+    // Verify it starts on Q1 with 10s
+    await expect(page.locator("text=AUTO-LIVE: Q1")).toContainText(/\(⏱️ 10s remaining\)/);
+
+    // Wait until it ticks down to 0 and auto-progresses to Q2
+    // Timeout of 15 seconds is more than enough for a 10s countdown
+    await expect(page.locator("text=AUTO-LIVE: Q2")).toBeVisible({ timeout: 15000 });
+
+    // Assert that Question 1's UI card immediately updates to show completed state
+    await expect(page.locator("li:has-text('Playwright E2E Prompt 1')").locator("text=Done")).toBeVisible();
+
+    // Assert that the ticking timer state variable re-initializes immediately back to 10s remaining on Q2
+    await expect(page.locator("text=AUTO-LIVE: Q2")).toContainText(/\(⏱️ 10s remaining\)/);
+
+    // Test Case 4: No-Loop Terminal State Enforcer
+    // Let's wait for Q2 (the final question) to tick down and complete the session
+    await expect(page.locator('button:has-text("Start Manual")')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('button:has-text("Auto-Launch")')).toBeVisible({ timeout: 15000 });
+
+    // Assert that the final question (Q2) transitions to completed/Done
+    await expect(page.locator("li:has-text('Playwright E2E Prompt 2')").locator("text=Done")).toBeVisible();
+
+    // Verify that Question 1 is NOT set back to live (no infinite loop)
+    await expect(page.locator("li:has-text('Playwright E2E Prompt 1')").locator("text=LIVE")).not.toBeVisible();
   });
 });
