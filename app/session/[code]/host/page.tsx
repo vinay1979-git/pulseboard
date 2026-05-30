@@ -735,6 +735,11 @@ export default function HostConsolePage() {
     activeQuestionRef.current = activeQuestion;
   }, [activeQuestion]);
 
+  const questionsRef = useRef<Question[]>([]);
+  useEffect(() => {
+    questionsRef.current = questions;
+  }, [questions]);
+
   useEffect(() => {
     activeSessionRef.current = session;
   }, [session]);
@@ -946,7 +951,7 @@ export default function HostConsolePage() {
         current.map((q) => q.id === currentQId ? { ...q, is_live: false, is_completed: true } : q)
       );
 
-      const latestQuestions = [...questions];
+      const latestQuestions = [...questionsRef.current];
       const currentIdx = latestQuestions.findIndex(q => q.id === currentQId);
       
       if (currentIdx !== -1 && currentIdx + 1 < latestQuestions.length) {
@@ -992,7 +997,7 @@ export default function HostConsolePage() {
         }))
       );
 
-      const target = questions.find((q) => q.id === questionId) || null;
+      const target = questionsRef.current.find((q) => q.id === questionId) || null;
       setActiveQuestion(target);
       setResponses([]);
       setParticipantsCount(0);
@@ -1003,7 +1008,7 @@ export default function HostConsolePage() {
       });
 
       if (target) {
-        const targetIdx = questions.findIndex(q => q.id === target.id);
+        const targetIdx = questionsRef.current.findIndex(q => q.id === target.id);
         if (targetIdx !== -1) {
           setManualLaunchPointer(targetIdx + 1);
         }
