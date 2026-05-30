@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+export const dynamic = 'force-dynamic';
+
 export default function AwaitingApprovalPage() {
   const router = useRouter();
   const supabase = createClient();

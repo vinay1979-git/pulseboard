@@ -7,6 +7,8 @@ import { getUserDisplayName, getUserIdentityLabel } from "@/lib/user";
 import { syncUserProfile } from "@/lib/db";
 import { isSupabaseConfigured } from "@/lib/env";
 
+export const dynamic = 'force-dynamic';
+
 export default async function ProfilePage() {
   let user = null;
   let displayName = "Vinay (vinay1979@gmail.com)";

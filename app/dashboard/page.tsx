@@ -7,6 +7,8 @@ import { isSupabaseConfigured } from "@/lib/env";
 import { getSessions, syncUserProfile } from "@/lib/db";
 import type { Session } from "@/lib/schema";
 
+export const dynamic = 'force-dynamic';
+
 export default async function DashboardPage() {
   let user = null;
   let identityLabel = "Developer (Local)";
