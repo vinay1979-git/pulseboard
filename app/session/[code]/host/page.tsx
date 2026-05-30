@@ -216,7 +216,7 @@ export default function HostConsolePage() {
       setTimeLeft(parsedDuration);
       setConsoleMode("auto");
       
-      await handleSetQuestionLive(questions[0].id);
+      await handleSetQuestionLive(questions[0].id, parsedDuration);
       
       setActionMessage(`Auto-launch loop successfully triggered with ${parsedDuration}s timer!`);
       setTimeout(() => setActionMessage(""), 3000);
@@ -268,7 +268,7 @@ export default function HostConsolePage() {
       setTimeLeft(parsedDuration);
       setConsoleMode("auto");
       
-      await handleSetQuestionLive(questions[0].id);
+      await handleSetQuestionLive(questions[0].id, parsedDuration);
       
       setActionMessage(`Auto-launch loop successfully triggered with ${parsedDuration}s timer!`);
       setTimeout(() => setActionMessage(""), 3000);
@@ -311,7 +311,7 @@ export default function HostConsolePage() {
       const currentIdx = latestQuestions.findIndex(q => q.id === currentQId);
       if (currentIdx !== -1 && currentIdx + 1 < latestQuestions.length) {
         const nextQ = latestQuestions[currentIdx + 1];
-        await handleSetQuestionLive(nextQ.id);
+        await handleSetQuestionLive(nextQ.id, configuredDuration);
       } else {
         // Reset session auto launch configuration in DB
         await clientDb.updateSessionAutoLaunch(session.id, false, 0);
@@ -941,7 +941,7 @@ export default function HostConsolePage() {
       
       if (currentIdx !== -1 && currentIdx + 1 < latestQuestions.length) {
         const nextQ = latestQuestions[currentIdx + 1];
-        void handleSetQuestionLive(nextQ.id);
+        void handleSetQuestionLive(nextQ.id, configuredDuration);
       } else {
         // If final question finished, stop auto launch in DB
         await clientDb.updateSessionAutoLaunch(session.id, false, 0);
@@ -961,7 +961,7 @@ export default function HostConsolePage() {
     }
   };
 
-  const handleSetQuestionLive = async (questionId: string) => {
+  const handleSetQuestionLive = async (questionId: string, forceAutoDuration?: number) => {
     if (!session) return;
     try {
       // Clear any existing timer
@@ -1004,8 +1004,9 @@ export default function HostConsolePage() {
       setTimeout(() => setActionMessage(""), 2000);
 
       // Start Auto-Launch countdown timer
-      const duration = parseInt(session.timer_seconds as any, 10) || 0;
-      if (session.auto_launch && duration > 0) {
+      const duration = forceAutoDuration !== undefined ? forceAutoDuration : (parseInt(session.timer_seconds as any, 10) || 0);
+      const isAuto = forceAutoDuration !== undefined ? true : session.auto_launch;
+      if (isAuto && duration > 0) {
         setTimerSecondsLeft(duration);
         setConfiguredDuration(duration);
         setTimeLeft(duration);
