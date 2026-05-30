@@ -28,6 +28,8 @@ import {
   Medal,
   CheckCircle2,
   Clock,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import {
   BarChart,
@@ -73,6 +75,32 @@ export default function HostConsolePage() {
   const [userRole, setUserRole] = useState<string>("power-user");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [windowWidth, setWindowWidth] = useState(typeof window !== "undefined" ? window.innerWidth : 1000);
+
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullScreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullScreen = async () => {
+    if (!workspaceRef.current) return;
+    try {
+      if (!document.fullscreenElement) {
+        await workspaceRef.current.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      console.error("Error toggling fullscreen:", err);
+    }
+  };
 
   const scale = useMemo(() => {
     if (windowWidth >= 768) return 1;
@@ -1332,9 +1360,16 @@ export default function HostConsolePage() {
     // Lay out words in a beautiful Archimedean spiral centered at (0, 0)
     return list.map((word, index) => {
       const angle = index * 2.4; // Golden angle spiral spread
-      const radius = index * 30 + 15; // Spread radius
-      const x = Math.cos(angle) * radius;
-      const y = Math.sin(angle) * radius;
+      const totalWords = list.length;
+      // Shrink step size if there are many words to fit them nicely
+      const step = totalWords > 10 ? Math.max(12, 30 - (totalWords - 10) * 1.2) : 30;
+      const radius = index * step + 15;
+      
+      // Strict bounding box bounds (max horizontal 220px, max vertical 140px) 
+      // to keep words completely inside the h-96 container (384px height)
+      const x = Math.cos(angle) * Math.min(radius, 220);
+      const y = Math.sin(angle) * Math.min(radius, 140);
+      
       return {
         ...word,
         x,
@@ -1751,10 +1786,36 @@ export default function HostConsolePage() {
         </section>
 
         {/* BOTTOM: Workspace Split-Screen (Span 5 Left, Span 7 Right) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          {/* LEFT COLUMN: Question Stack (Span 5) */}
-          <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
+        <div
+          ref={workspaceRef}
+          className={`w-full transition-all duration-300 ${
+            isFullScreen ? "p-8 bg-[#0b0f19] overflow-y-auto h-full flex flex-col gap-4 z-50" : ""
+          }`}
+        >
+          <div className="flex justify-end relative z-30 mb-2">
+            <Button
+              type="button"
+              onClick={toggleFullScreen}
+              className="h-9 px-3.5 bg-slate-800/80 hover:bg-slate-700 text-white font-extrabold text-xs flex items-center gap-1.5 cursor-pointer rounded-xl border border-white/10 shadow-lg shadow-black/25 backdrop-blur-md transition-all duration-200"
+            >
+              {isFullScreen ? (
+                <>
+                  <Minimize2 className="size-4 text-cyan-400" />
+                  Exit Full Screen
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="size-4 text-cyan-400" />
+                  Full Screen
+                </>
+              )}
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1">
+            
+            {/* LEFT COLUMN: Question Stack (Span 5) */}
+            <div className={`col-span-12 ${isFullScreen ? "lg:col-span-3" : "lg:col-span-5"} flex flex-col gap-6`}>
             <section className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 shadow-2xl backdrop-blur-2xl relative flex flex-col h-full">
               <h3 className="text-lg font-black border-b border-white/5 pb-3 flex items-center gap-2 text-white">
                 <BarChart3 className="size-4 text-cyan-400" />
@@ -1773,7 +1834,7 @@ export default function HostConsolePage() {
                         {consoleMode === "idle" && (
                           <>
                             {isAutoLaunchConfigExpanded ? (
-                              <div className="flex items-center gap-2 bg-slate-950/40 border border-white/5 rounded-lg px-3 py-1.5 w-full flex-wrap sm:flex-nowrap">
+                              <div className="flex items-center gap-2 bg-slate-950/40 border border-white/5 rounded-lg px-3 py-1.5 w-full flex-wrap">
                                 <span className="text-[10px] font-black uppercase text-slate-400 shrink-0">Time per question (10-300s):</span>
                                 <Input
                                   type="number"
@@ -1896,7 +1957,7 @@ export default function HostConsolePage() {
                               AUTO-LIVE: Q{questions.findIndex(q => q.id === activeQuestion?.id) + 1} (⏱️ {timerSecondsLeft !== null ? timerSecondsLeft : 0}s remaining)
                             </div>
                             
-                            <div className="flex gap-2 w-full sm:w-auto shrink-0 flex-wrap sm:flex-nowrap">
+                            <div className="flex flex-wrap gap-2 w-full sm:w-auto shrink-0">
                               <Button
                                 type="button"
                                 onClick={handleTogglePauseAutoLaunch}
@@ -2032,7 +2093,7 @@ export default function HostConsolePage() {
                                     </span>
                                   )}
                                 </div>
-                                <h4 className="font-extrabold text-sm mt-1 text-slate-200 truncate whitespace-nowrap" title={q.prompt_text}>
+                                <h4 className="font-extrabold text-sm mt-1 text-slate-200 whitespace-normal break-words text-wrap" title={q.prompt_text}>
                                   {q.prompt_text}
                                 </h4>
                               </div>
@@ -2095,7 +2156,7 @@ export default function HostConsolePage() {
                               {q.options.map((opt, oIdx) => (
                                 <div key={oIdx} className="text-xs text-slate-300 flex items-center gap-2">
                                   <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
-                                  <span className="truncate">{opt}</span>
+                                  <span className="whitespace-normal break-words text-wrap">{opt}</span>
                                 </div>
                               ))}
                             </div>
@@ -2137,7 +2198,7 @@ export default function HostConsolePage() {
           </div>
 
           {/* RIGHT COLUMN: Live Results & Visualizations (Span 7) */}
-          <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
+          <div className={`col-span-12 ${isFullScreen ? "lg:col-span-9" : "lg:col-span-7"} flex flex-col gap-6`}>
             <section className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 shadow-2xl backdrop-blur-2xl relative overflow-hidden flex flex-col h-full justify-between">
               <div className="absolute -inset-px rounded-2xl bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
 
@@ -2241,7 +2302,13 @@ export default function HostConsolePage() {
                   /* Custom Premium SVGs React + Framer Motion Word Cloud */
                   <div className="h-96 w-full border border-white/5 rounded-xl bg-slate-950/40 overflow-hidden relative shadow-inner flex items-center justify-center">
                     {wordCloudWords.map((word, index) => {
-                      const fontSize = (16 + Math.min(word.count * 8, 48)) * scale; 
+                      // Scale down font sizes if the word itself is very long to prevent cutoff
+                      const textLengthFactor = word.text.length > 8 ? Math.max(0.45, 8 / word.text.length) : 1;
+                      // Scale down font sizes when total word count is large to prevent crowding
+                      const totalWords = wordCloudWords.length;
+                      const countScale = totalWords > 15 ? Math.max(0.5, 15 / totalWords) : 1;
+                      const baseFontSize = 16 + Math.min(word.count * 8, 48);
+                      const fontSize = baseFontSize * scale * textLengthFactor * countScale;
                       
                       return (
                         <span
@@ -2273,6 +2340,7 @@ export default function HostConsolePage() {
             </section>
           </div>
 
+          </div>
         </div>
 
         {session?.auth_mode === "quiz_gmail" && (
