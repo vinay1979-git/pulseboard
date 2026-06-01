@@ -140,6 +140,11 @@ export async function proxy(request: NextRequest) {
   }
 
   // 4. Redirect based on approval_status
+  // Path exemption: never block session or room attendees even if pending approval
+  if (pathname.startsWith("/session/") || pathname.startsWith("/room/")) {
+    return supabaseResponse;
+  }
+
   if (approvalStatus === "pending") {
     if (pathname !== "/awaiting-approval") {
       return redirectWithCookies(request, supabaseResponse, "/awaiting-approval");
