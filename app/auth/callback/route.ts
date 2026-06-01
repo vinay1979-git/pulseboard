@@ -59,8 +59,38 @@ export async function GET(request: NextRequest) {
 
         if (user) {
           const googleAvatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture;
-          // Sync and retrieve User Profile to handle normal flow
-          await syncUserProfile(user.id, user.email || "", googleAvatarUrl);
+          const isSessionPath = redirectPath.includes("/session/") || redirectPath.includes("/room/");
+
+          if (isSessionPath) {
+            // Instantiate Supabase Admin Client using Service Role Key to bypass database triggers
+            const { createAdminClient } = await import("@/lib/supabase/server");
+            const adminClient = createAdminClient();
+
+            try {
+              const { error: adminErr } = await adminClient
+                .from("profiles")
+                .upsert({
+                  id: user.id,
+                  email: user.email,
+                  role: "participant",
+                  approval_status: "approved",
+                  avatar_url: googleAvatarUrl || null,
+                  updated_at: new Date().toISOString(),
+                  created_at: new Date().toISOString()
+                }, { onConflict: "id" });
+
+              if (adminErr) {
+                console.error("Admin client profile upsert failed during callback:", adminErr);
+              } else {
+                console.log("Successfully forced approved participant role for attendee via Admin client:", user.id);
+              }
+            } catch (err) {
+              console.error("Failed to force approved profile using adminClient:", err);
+            }
+          } else {
+            // Sync and retrieve User Profile to handle normal flow
+            await syncUserProfile(user.id, user.email || "", googleAvatarUrl);
+          }
 
           // If sessionId is present, this user is a participant joining a session!
           if (sessionId) {
