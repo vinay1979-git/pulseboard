@@ -59,28 +59,21 @@ const CustomYAxisTick = ({ x, y, payload, index, activeQuestion }: any) => {
   
   const fullText = payload?.value || "";
   
-  // Two-line display and truncation logic
+  // Strict character-based wrapping & truncation logic
   const cleanText = fullText.trim();
   let line1 = cleanText;
   let line2 = "";
   
   if (cleanText.length > 15) {
-    // Find a good split point in the first 15 characters
-    const slice15 = cleanText.slice(0, 16);
-    let splitIdx = 15;
-    const lastSpace = slice15.lastIndexOf(" ");
-    if (lastSpace >= 6 && lastSpace <= 15) {
-      splitIdx = lastSpace;
-    }
-    
-    line1 = cleanText.slice(0, splitIdx).trim();
-    let remaining = cleanText.slice(splitIdx).trim();
+    line1 = cleanText.slice(0, 15);
+    const remaining = cleanText.slice(15);
     
     if (remaining.length > 15) {
       // Truncate to 12 characters and append ellipsis
-      remaining = remaining.slice(0, 12) + "...";
+      line2 = remaining.slice(0, 12) + "...";
+    } else {
+      line2 = remaining;
     }
-    line2 = remaining;
   }
 
   const hasTwoLines = line2 !== "";
