@@ -2442,25 +2442,30 @@ export default function HostConsolePage() {
                   </thead>
                   <tbody>
                     <AnimatePresence>
-                      {leaderboard.map((player, idx) => {
-                        const rank = idx + 1;
-                        let rankStyle = "text-slate-400 font-bold";
-                        let rowBg = "hover:bg-white/[0.02]";
-                        let rankBadge = null;
+                      {(() => {
+                        let currentRank = 1;
+                        return leaderboard.map((player, idx) => {
+                          if (idx > 0 && player.score < leaderboard[idx - 1].score) {
+                            currentRank = idx + 1;
+                          }
+                          const rank = currentRank;
+                          let rankStyle = "text-slate-400 font-bold";
+                          let rowBg = "hover:bg-white/[0.02]";
+                          let rankBadge = null;
 
-                        if (rank === 1) {
-                          rankStyle = "text-amber-400 font-extrabold";
-                          rowBg = "bg-amber-400/5 hover:bg-amber-400/10 border-l-4 border-l-amber-400";
-                          rankBadge = <Trophy className="size-4 text-amber-400 shrink-0" />;
-                        } else if (rank === 2) {
-                          rankStyle = "text-slate-300 font-extrabold";
-                          rowBg = "bg-slate-300/5 hover:bg-slate-300/10 border-l-4 border-l-slate-300";
-                          rankBadge = <Medal className="size-4 text-slate-300 shrink-0" />;
-                        } else if (rank === 3) {
-                          rankStyle = "text-amber-600 font-extrabold";
-                          rowBg = "bg-amber-600/5 hover:bg-amber-600/10 border-l-4 border-l-amber-600";
-                          rankBadge = <Medal className="size-4 text-amber-600 shrink-0" />;
-                        }
+                          if (rank === 1) {
+                            rankStyle = "text-amber-400 font-extrabold";
+                            rowBg = "bg-amber-400/5 hover:bg-amber-400/10 border-l-4 border-l-amber-400";
+                            rankBadge = <Trophy className="size-4 text-amber-400 shrink-0" />;
+                          } else if (rank === 2) {
+                            rankStyle = "text-slate-300 font-extrabold";
+                            rowBg = "bg-slate-300/5 hover:bg-slate-300/10 border-l-4 border-l-slate-300";
+                            rankBadge = <Medal className="size-4 text-slate-300 shrink-0" />;
+                          } else if (rank === 3) {
+                            rankStyle = "text-amber-600 font-extrabold";
+                            rowBg = "bg-amber-600/5 hover:bg-amber-600/10 border-l-4 border-l-amber-600";
+                            rankBadge = <Medal className="size-4 text-amber-600 shrink-0" />;
+                          }
 
                         return (
                           <motion.tr
@@ -2498,7 +2503,8 @@ export default function HostConsolePage() {
                             </td>
                           </motion.tr>
                         );
-                      })}
+                      });
+                    })()}
                     </AnimatePresence>
                   </tbody>
                 </table>
