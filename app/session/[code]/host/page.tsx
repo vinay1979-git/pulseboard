@@ -58,22 +58,61 @@ const CustomYAxisTick = ({ x, y, payload, index, activeQuestion }: any) => {
   const isCorrect = isQuiz && optIndex !== -1 && activeQuestion.correct_option === optIndex + 1;
   
   const fullText = payload?.value || "";
-  const displayedText = fullText.length > 10 ? `${fullText.slice(0, 10)}...` : fullText;
+  
+  // Two-line display and truncation logic
+  const cleanText = fullText.trim();
+  let line1 = cleanText;
+  let line2 = "";
+  
+  if (cleanText.length > 15) {
+    // Find a good split point in the first 15 characters
+    const slice15 = cleanText.slice(0, 16);
+    let splitIdx = 15;
+    const lastSpace = slice15.lastIndexOf(" ");
+    if (lastSpace >= 6 && lastSpace <= 15) {
+      splitIdx = lastSpace;
+    }
+    
+    line1 = cleanText.slice(0, splitIdx).trim();
+    let remaining = cleanText.slice(splitIdx).trim();
+    
+    if (remaining.length > 15) {
+      // Truncate to 12 characters and append ellipsis
+      remaining = remaining.slice(0, 12) + "...";
+    }
+    line2 = remaining;
+  }
+
+  const hasTwoLines = line2 !== "";
 
   return (
     <g transform={`translate(${x},${y})`}>
       <title>{fullText}</title>
       <text
         x={-10}
-        y={4}
+        y={hasTwoLines ? -2 : 4}
         textAnchor="end"
         fill="#e2e8f0"
-        fontSize={13}
+        fontSize={hasTwoLines ? 12 : 13}
         fontWeight="bold"
         style={{ cursor: "help" }}
       >
-        {isQuiz && optIndex !== -1 ? (isCorrect ? "✅ " : "❌ ") : ""}
-        {displayedText}
+        {hasTwoLines ? (
+          <>
+            <tspan x={-10} dy={0}>
+              {isQuiz && optIndex !== -1 ? (isCorrect ? "✅ " : "❌ ") : ""}
+              {line1}
+            </tspan>
+            <tspan x={-10} dy={14}>
+              {line2}
+            </tspan>
+          </>
+        ) : (
+          <>
+            {isQuiz && optIndex !== -1 ? (isCorrect ? "✅ " : "❌ ") : ""}
+            {line1}
+          </>
+        )}
       </text>
     </g>
   );
