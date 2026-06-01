@@ -151,6 +151,10 @@ export default function ParticipantLoginPage() {
         provider: "google",
         options: {
           redirectTo,
+          data: {
+            is_participant: true,
+            role: "participant",
+          },
         },
       });
 

@@ -57,7 +57,7 @@ export interface Response {
 export interface UserProfile {
   id: string;
   email: string;
-  role: "super-admin" | "power-user";
+  role: "super-admin" | "power-user" | "participant" | "voter";
   approval_status: "pending" | "approved";
   avatar_url?: string | null;
   created_at: string;

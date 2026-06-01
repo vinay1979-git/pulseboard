@@ -49,12 +49,20 @@ CREATE OR REPLACE FUNCTION "public"."handle_new_user"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
 BEGIN
-  INSERT INTO public.profiles (id, email, role, approval_status)
-  VALUES (NEW.id, NEW.email, 'power-user', CASE WHEN NEW.email = 'vinay1979@gmail.com' THEN 'approved' ELSE 'pending' END)
-  ON CONFLICT (id) DO NOTHING;
-  
-  IF NEW.email = 'vinay1979@gmail.com' THEN
-    UPDATE public.profiles SET role = 'super-admin', approval_status = 'approved' WHERE id = NEW.id;
+  IF (NEW.raw_user_meta_data->>'is_participant')::boolean = true OR NEW.raw_user_meta_data->>'role' = 'participant' OR NEW.raw_user_meta_data->>'role' = 'voter' THEN
+    -- Frictionless participant attendee flow
+    INSERT INTO public.profiles (id, email, role, approval_status)
+    VALUES (NEW.id, NEW.email, 'participant', 'approved')
+    ON CONFLICT (id) DO NOTHING;
+  ELSE
+    -- Normal power-user / super-admin flow
+    INSERT INTO public.profiles (id, email, role, approval_status)
+    VALUES (NEW.id, NEW.email, 'power-user', CASE WHEN NEW.email = 'vinay1979@gmail.com' THEN 'approved' ELSE 'pending' END)
+    ON CONFLICT (id) DO NOTHING;
+    
+    IF NEW.email = 'vinay1979@gmail.com' THEN
+      UPDATE public.profiles SET role = 'super-admin', approval_status = 'approved' WHERE id = NEW.id;
+    END IF;
   END IF;
   
   RETURN NEW;
@@ -78,7 +86,7 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "updated_at" timestamp with time zone DEFAULT "now"(),
     "avatar_url" "text",
     CONSTRAINT "profiles_approval_status_check" CHECK (("approval_status" = ANY (ARRAY['pending'::"text", 'approved'::"text"]))),
-    CONSTRAINT "profiles_role_check" CHECK (("role" = ANY (ARRAY['super-admin'::"text", 'power-user'::"text"])))
+    CONSTRAINT "profiles_role_check" CHECK (("role" = ANY (ARRAY['super-admin'::"text", 'power-user'::"text", 'participant'::"text", 'voter'::"text"])))
 );
 
 
