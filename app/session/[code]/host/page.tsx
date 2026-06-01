@@ -56,11 +56,24 @@ const CustomYAxisTick = ({ x, y, payload, index, activeQuestion }: any) => {
   const isQuiz = activeQuestion.correct_option !== null && activeQuestion.correct_option !== undefined;
   const optIndex = typeof index === "number" ? index : (activeQuestion.options?.indexOf(payload?.value) ?? -1);
   const isCorrect = isQuiz && optIndex !== -1 && activeQuestion.correct_option === optIndex + 1;
+  
+  const fullText = payload?.value || "";
+  const displayedText = fullText.length > 10 ? `${fullText.slice(0, 10)}...` : fullText;
+
   return (
     <g transform={`translate(${x},${y})`}>
-      <text x={-10} y={4} textAnchor="end" fill="#e2e8f0" fontSize={13} fontWeight="bold">
+      <title>{fullText}</title>
+      <text
+        x={-10}
+        y={4}
+        textAnchor="end"
+        fill="#e2e8f0"
+        fontSize={13}
+        fontWeight="bold"
+        style={{ cursor: "help" }}
+      >
         {isQuiz && optIndex !== -1 ? (isCorrect ? "✅ " : "❌ ") : ""}
-        {payload?.value || ""}
+        {displayedText}
       </text>
     </g>
   );
