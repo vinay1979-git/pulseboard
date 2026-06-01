@@ -1406,14 +1406,17 @@ export default function HostConsolePage() {
     return list.map((word, index) => {
       const angle = index * 2.4; // Golden angle spiral spread
       const totalWords = list.length;
-      // Shrink step size if there are many words to fit them nicely
-      const step = totalWords > 10 ? Math.max(12, 30 - (totalWords - 10) * 1.2) : 30;
-      const radius = index * step + 15;
       
-      // Strict bounding box bounds (max horizontal 220px, max vertical 140px) 
-      // to keep words completely inside the h-96 container (384px height)
-      const x = Math.cos(angle) * Math.min(radius, 220);
-      const y = Math.sin(angle) * Math.min(radius, 140);
+      // Scale spiral step and bounding box dynamically in full-screen mode
+      const stepBase = totalWords > 10 ? Math.max(12, 30 - (totalWords - 10) * 1.2) : 30;
+      const step = isFullScreen ? stepBase * 1.8 : stepBase;
+      const radius = index * step + (isFullScreen ? 25 : 15);
+      
+      const maxH = isFullScreen ? 450 : 220;
+      const maxV = isFullScreen ? 280 : 140;
+      
+      const x = Math.cos(angle) * Math.min(radius, maxH);
+      const y = Math.sin(angle) * Math.min(radius, maxV);
       
       return {
         ...word,
@@ -1421,7 +1424,7 @@ export default function HostConsolePage() {
         y,
       };
     });
-  }, [activeQuestion, responses]);
+  }, [activeQuestion, responses, isFullScreen]);
 
   const getWordColor = (index: number) => {
     const colors = [
@@ -2345,14 +2348,21 @@ export default function HostConsolePage() {
                   </div>
                 ) : (
                   /* Custom Premium SVGs React + Framer Motion Word Cloud */
-                  <div className="h-96 w-full border border-white/5 rounded-xl bg-slate-950/40 overflow-hidden relative shadow-inner flex items-center justify-center">
+                  <div className={`w-full border border-white/5 rounded-xl bg-slate-950/40 relative shadow-inner flex items-center justify-center transition-all duration-300 ${
+                    isFullScreen ? "h-[72vh] overflow-visible" : "h-96 overflow-hidden"
+                  }`}>
                     {wordCloudWords.map((word, index) => {
                       // Scale down font sizes if the word itself is very long to prevent cutoff
                       const textLengthFactor = word.text.length > 8 ? Math.max(0.45, 8 / word.text.length) : 1;
                       // Scale down font sizes when total word count is large to prevent crowding
                       const totalWords = wordCloudWords.length;
                       const countScale = totalWords > 15 ? Math.max(0.5, 15 / totalWords) : 1;
-                      const baseFontSize = 16 + Math.min(word.count * 8, 48);
+                      
+                      // Scale base font ranges dynamically for full screen mode
+                      const fsMin = isFullScreen ? 28 : 16;
+                      const fsMaxOffset = isFullScreen ? 96 : 48;
+                      const countMultiplier = isFullScreen ? 15 : 8;
+                      const baseFontSize = fsMin + Math.min(word.count * countMultiplier, fsMaxOffset);
                       const fontSize = baseFontSize * scale * textLengthFactor * countScale;
                       
                       return (
