@@ -123,10 +123,14 @@ export default function HostConsolePage() {
 
   const [isFullScreen, setIsFullScreen] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
+  
+  const [isLeaderboardFullScreen, setIsLeaderboardFullScreen] = useState(false);
+  const leaderboardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullScreen(!!document.fullscreenElement);
+      setIsFullScreen(document.fullscreenElement === workspaceRef.current);
+      setIsLeaderboardFullScreen(document.fullscreenElement === leaderboardRef.current);
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => {
@@ -144,6 +148,19 @@ export default function HostConsolePage() {
       }
     } catch (err) {
       console.error("Error toggling fullscreen:", err);
+    }
+  };
+
+  const toggleLeaderboardFullScreen = async () => {
+    if (!leaderboardRef.current) return;
+    try {
+      if (!document.fullscreenElement) {
+        await leaderboardRef.current.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      console.error("Error toggling leaderboard fullscreen:", err);
     }
   };
 
@@ -2399,10 +2416,17 @@ export default function HostConsolePage() {
         </div>
 
         {session?.auth_mode === "quiz_gmail" && (
-          <section className="mt-8 rounded-2xl border border-white/10 bg-slate-900/60 p-6 shadow-2xl backdrop-blur-2xl relative overflow-hidden">
+          <section
+            ref={leaderboardRef}
+            className={`mt-8 rounded-2xl border border-white/10 shadow-2xl backdrop-blur-2xl relative overflow-hidden flex flex-col transition-all duration-300 ${
+              isLeaderboardFullScreen
+                ? "fixed inset-0 z-50 p-8 bg-[#0b0f19] h-screen w-screen border-none rounded-none"
+                : "p-6 bg-slate-900/60 h-auto"
+            }`}
+          >
             <div className="absolute -inset-px rounded-2xl bg-gradient-to-tr from-cyan-500/5 to-violet-500/5 opacity-20 pointer-events-none" />
             
-            <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-white/5 pb-4 relative z-10">
+            <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-white/5 pb-4 relative z-10 shrink-0">
               <div>
                 <h3 className="text-xl font-black text-white flex items-center gap-2">
                   <Trophy className="size-5 text-amber-400" />
@@ -2412,18 +2436,40 @@ export default function HostConsolePage() {
                   Real-time participant rankings and score standings.
                 </p>
               </div>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => void reloadLeaderboard(session.id)}
-                className="h-9 px-4 border border-white/5 bg-slate-950/40 hover:bg-slate-950 text-white font-bold flex items-center gap-2"
-              >
-                <RefreshCw className="size-3.5 text-cyan-400" />
-                Refresh Scores
-              </Button>
+              <div className="flex gap-2 shrink-0">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={toggleLeaderboardFullScreen}
+                  className="h-9 px-3.5 bg-slate-800/80 hover:bg-slate-700 text-white font-extrabold text-xs flex items-center gap-1.5 cursor-pointer rounded-xl border border-white/10 shadow-lg shadow-black/25 backdrop-blur-md transition-all duration-200"
+                >
+                  {isLeaderboardFullScreen ? (
+                    <>
+                      <Minimize2 className="size-4 text-cyan-400" />
+                      Exit Full Screen
+                    </>
+                  ) : (
+                    <>
+                      <Maximize2 className="size-4 text-cyan-400" />
+                      Full Screen
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void reloadLeaderboard(session.id)}
+                  className="h-9 px-4 border border-white/5 bg-slate-950/40 hover:bg-slate-950 text-white font-bold flex items-center gap-2 cursor-pointer"
+                >
+                  <RefreshCw className="size-3.5 text-cyan-400" />
+                  Refresh Scores
+                </Button>
+              </div>
             </div>
 
-            <div className="relative z-10 overflow-x-auto">
+            <div className={`relative z-10 overflow-x-auto overflow-y-auto ${
+              isLeaderboardFullScreen ? "max-h-[calc(100vh-160px)] flex-1" : "max-h-[500px]"
+            }`}>
               {leaderboard.length === 0 ? (
                 <div className="py-12 text-center">
                   <UsersRound className="size-12 text-slate-700 mx-auto mb-3 animate-pulse" />
@@ -2432,7 +2478,7 @@ export default function HostConsolePage() {
                 </div>
               ) : (
                 <table className="w-full text-left border-collapse">
-                  <thead>
+                  <thead className={`sticky top-0 z-20 ${isLeaderboardFullScreen ? "bg-[#0b0f19]" : "bg-slate-900"}`}>
                     <tr className="border-b border-white/5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                       <th className="py-3 px-4">Rank</th>
                       <th className="py-3 px-4">Player Name</th>
